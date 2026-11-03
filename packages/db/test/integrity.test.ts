@@ -39,7 +39,7 @@ async function setUpWorkspace(label: string): Promise<Fixture> {
       await insertLedgerAccount(db, context.workspaceId, userAccount(fixture.current, 'Current'));
       await insertLedgerAccount(db, context.workspaceId, userAccount(fixture.closed, 'Closed', true));
       await insertLedgerAccount(db, context.workspaceId, { id: fixture.food, name: 'Food', kind: 'expense', category: {} });
-      const chart = await loadChart(db);
+      const chart = await loadChart(db, context.workspaceId);
       fixture.obe = chart.system('OBE').id;
       const opening = build.openingBalance(chart, { id: uuidv7(), date: '2026-03-01', accountId: fixture.current, amount: 100000 })!;
       await insertTransaction(db, context.workspaceId, opening, { origin: 'system', userId: context.userId });

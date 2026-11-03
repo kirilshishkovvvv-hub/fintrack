@@ -45,7 +45,7 @@ describe('golden scenarios (PostgreSQL round trip)', () => {
             timezone: 'Europe/Sofia',
             ownerUserId: context.userId,
           });
-          for (const system of (await loadChart(db)).all()) ids.set(`sys:${system.systemCode}`, system.id);
+          for (const system of (await loadChart(db, context.workspaceId)).all()) ids.set(`sys:${system.systemCode}`, system.id);
 
           const custom = book.chart.all().filter((account) => !account.systemCode);
           for (const account of custom) ids.set(account.id, uuidv7());
@@ -72,7 +72,7 @@ describe('golden scenarios (PostgreSQL round trip)', () => {
         { write: true },
       );
 
-      const ledger = await withWorkspace(database.pool, context, async (db) => new Ledger(await loadChart(db), await loadTransactions(db)));
+      const ledger = await withWorkspace(database.pool, context, async (db) => new Ledger(await loadChart(db, context.workspaceId), await loadTransactions(db, context.workspaceId)));
       const idOf = (name: string) => {
         const id = ids.get(name);
         if (!id) throw new Error(`No id for ${name}`);

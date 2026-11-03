@@ -45,7 +45,12 @@ async function workspaceCurrency(db: Db, workspaceId: string): Promise<Currency>
 }
 
 /** Inserts a user account or a category (system accounts are created with the workspace). */
-export async function insertLedgerAccount(db: Db, workspaceId: string, account: LedgerAccount): Promise<void> {
+export async function insertLedgerAccount(
+  db: Db,
+  workspaceId: string,
+  account: LedgerAccount,
+  options: { systemKey?: string } = {},
+): Promise<void> {
   const currency = await workspaceCurrency(db, workspaceId);
   await db.query(
     `INSERT INTO fin.ledger_accounts (id, workspace_id, kind, currency, name, is_archived, archived_at)
@@ -62,9 +67,9 @@ export async function insertLedgerAccount(db: Db, workspaceId: string, account: 
     );
   } else if (account.category) {
     await db.query(
-      `INSERT INTO fin.categories (ledger_account_id, workspace_id, ledger_kind, parent_id)
-       VALUES ($1, $2, $3, $4)`,
-      [account.id, workspaceId, account.kind, account.category.parentId ?? null],
+      `INSERT INTO fin.categories (ledger_account_id, workspace_id, ledger_kind, parent_id, system_key)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [account.id, workspaceId, account.kind, account.category.parentId ?? null, options.systemKey ?? null],
     );
   }
 }
@@ -74,13 +79,14 @@ export async function insertTransaction(
   db: Db,
   workspaceId: string,
   tx: Transaction,
-  meta: { origin: 'manual' | 'import' | 'occurrence' | 'system'; userId: string },
+  meta: { origin: 'manual' | 'import' | 'occurrence' | 'system'; userId: string; description?: string; memo?: string },
 ): Promise<void> {
   const currency = await workspaceCurrency(db, workspaceId);
   await db.query(
-    `INSERT INTO fin.transactions (id, workspace_id, txn_date, kind, status, origin, refund_of_id, created_by, updated_by)
-     VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $7)`,
-    [tx.id, workspaceId, tx.date, tx.kind, meta.origin, tx.refundOfId ?? null, meta.userId],
+    `INSERT INTO fin.transactions (id, workspace_id, txn_date, kind, status, origin, refund_of_id, description, memo,
+                                   created_by, updated_by)
+     VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8, $9, $9)`,
+    [tx.id, workspaceId, tx.date, tx.kind, meta.origin, tx.refundOfId ?? null, meta.description ?? null, meta.memo ?? null, meta.userId],
   );
   let lineNo = 0;
   for (const posting of tx.postings) {
@@ -114,8 +120,11 @@ interface LedgerAccountRow {
   parent_id: string | null;
 }
 
-/** Loads every ledger account of the current workspace into a domain Chart. */
-export async function loadChart(db: Db): Promise<Chart> {
+/**
+ * Loads every ledger account of the workspace into a domain Chart. The explicit workspace filter
+ * is the application layer of isolation; row-level security is the independent second layer (FR-02).
+ */
+export async function loadChart(db: Db, workspaceId: string): Promise<Chart> {
   const result = await db.query<LedgerAccountRow>(`
     SELECT la.id, la.kind, la.name, la.system_code, la.is_archived,
            a.account_class, a.account_type, a.spendable, a.card_reserve, to_char(a.opening_date, 'YYYY-MM-DD') AS opening_date,
@@ -123,7 +132,8 @@ export async function loadChart(db: Db): Promise<Chart> {
       FROM fin.ledger_accounts la
       LEFT JOIN fin.accounts a ON a.ledger_account_id = la.id
       LEFT JOIN fin.categories c ON c.ledger_account_id = la.id
-     ORDER BY la.id`);
+     WHERE la.workspace_id = $1
+     ORDER BY la.id`, [workspaceId]);
   return new Chart(
     result.rows.map((row) => {
       const account: LedgerAccount = { id: row.id, kind: row.kind, name: row.name };
@@ -155,14 +165,15 @@ interface PostingRow {
   mark: 'discount' | 'deduction' | null;
 }
 
-/** Loads every transaction of the current workspace with its postings, in line order. */
-export async function loadTransactions(db: Db): Promise<Transaction[]> {
+/** Loads every transaction of the workspace with its postings, in line order. */
+export async function loadTransactions(db: Db, workspaceId: string): Promise<Transaction[]> {
   const result = await db.query<PostingRow>(`
     SELECT t.id AS transaction_id, to_char(t.txn_date, 'YYYY-MM-DD') AS txn_date, t.kind, t.status, t.refund_of_id,
            p.ledger_account_id, p.amount_minor::text, p.mark
       FROM fin.transactions t
       JOIN fin.postings p ON p.transaction_id = t.id
-     ORDER BY t.txn_date, t.id, p.line_no`);
+     WHERE t.workspace_id = $1 AND p.workspace_id = $1
+     ORDER BY t.txn_date, t.id, p.line_no`, [workspaceId]);
   const byId = new Map<string, Transaction>();
   for (const row of result.rows) {
     let tx = byId.get(row.transaction_id);

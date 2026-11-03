@@ -19,8 +19,7 @@ export const notYetEncoded: { id: string; reason: string; stage: number }[] = [
   { id: 'GT-10', reason: 'Transfers in Transit is a Should Have', stage: 4 },
   { id: 'GT-16', reason: 'planned card repayment and card-funded plans in Safe to Spend', stage: 5 },
   { id: 'GT-20', reason: 'planned instalment matched to an occurrence', stage: 5 },
-  { id: 'GT-39', reason: 'atomicity through the database and import confirmation', stage: 3 },
-  { id: 'GT-59', reason: 'isolation between two users through the API and database', stage: 3 },
-  { id: 'GT-70', reason: 'USD workspace end to end', stage: 3 },
-  { id: 'GT-71', reason: 'currency lock and foreign-currency import rows', stage: 3 },
+  { id: 'GT-39 (b)', reason: 'import confirmation is all-or-nothing; part (a) is covered by the database tests', stage: 4 },
+  { id: 'GT-59 (export, search)', reason: 'isolation of export and search; read, use and change are covered by the API tests', stage: 4 },
+  { id: 'GT-71 (import rows)', reason: 'foreign-currency import rows; the currency lock is covered by the database tests', stage: 4 },
 ];

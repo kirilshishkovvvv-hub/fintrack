@@ -17,6 +17,27 @@ export interface ContextOptions {
   write?: boolean;
 }
 
+/**
+ * A context with only the user set, for the few queries that run before a workspace is chosen
+ * (finding the user's memberships). Row-level security still applies.
+ */
+export async function withUser<T>(pool: pg.Pool, userId: string, work: (db: Db) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE fin_app');
+    await client.query("SELECT set_config('app.user_id', $1, true)", [userId]);
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function withWorkspace<T>(
   pool: pg.Pool,
   context: RequestContext,

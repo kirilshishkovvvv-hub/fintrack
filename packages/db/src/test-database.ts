@@ -14,6 +14,8 @@ import { migrate } from './migrate.ts';
 
 export interface TestDatabase {
   pool: pg.Pool;
+  /** Connection settings for opening further pools (for example the auth pool). */
+  connection: pg.PoolConfig;
   stop(): Promise<void>;
 }
 
@@ -44,14 +46,15 @@ export async function startTestDatabase(): Promise<TestDatabase> {
   await cluster.start();
   await cluster.createDatabase('fintrack_test');
 
-  const pool = new pg.Pool({
+  const connection: pg.PoolConfig = {
     host: '127.0.0.1',
     port,
     user: 'postgres',
     password,
     database: 'fintrack_test',
     max: 10,
-  });
+  };
+  const pool = new pg.Pool(connection);
   const client = await pool.connect();
   try {
     await migrate(client);
@@ -61,6 +64,7 @@ export async function startTestDatabase(): Promise<TestDatabase> {
 
   return {
     pool,
+    connection,
     async stop() {
       await pool.end();
       await cluster.stop();
