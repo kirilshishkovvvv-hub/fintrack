@@ -1,0 +1,136 @@
+{
+  "app": {
+    "name": "Fintrack",
+    "skipToContent": "Skip to content",
+    "signOut": "Sign out",
+    "loading": "Loading…",
+    "retry": "Try again",
+    "genericError": "Something went wrong. Try again in a moment.",
+    "notFinancialAdvice": "Figures are estimates based on the data you enter. This isn't financial advice."
+  },
+  "nav": {
+    "dashboard": "Home",
+    "transactions": "Activity",
+    "add": "Add",
+    "accounts": "Accounts"
+  },
+  "signUp": {
+    "title": "Create your account",
+    "email": "Email",
+    "password": "Password",
+    "passwordHint": "At least 12 characters. A short sentence works well.",
+    "acceptTerms": "I accept the Terms of service",
+    "acceptPrivacy": "I've read the Privacy notice",
+    "confirmAge": "I'm 18 or older",
+    "marketing": "Send me occasional product news (optional)",
+    "submit": "Create account",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign in",
+    "checkInbox": "Check your inbox",
+    "checkInboxBody": "If this email can be used, we've sent a link to {email}. Open it to verify your address, then sign in.",
+    "consentRequired": "Accept the terms and privacy notice, and confirm you're 18 or older.",
+    "passwordTooShort": "Use at least 12 characters."
+  },
+  "signIn": {
+    "title": "Sign in",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "noAccount": "New here?",
+    "createAccount": "Create an account",
+    "verified": "Your email is verified. Sign in to continue.",
+    "invalid": "That email and password don't match.",
+    "unverified": "Verify your email first. We've sent you a new link.",
+    "tooMany": "Too many attempts. Wait a few minutes and try again."
+  },
+  "onboarding": {
+    "title": "Set up your money space",
+    "intro": "Choose the currency you keep your money in. You can't change it once you add transactions.",
+    "name": "Name",
+    "defaultName": "Personal",
+    "currency": "Currency",
+    "eur": "Euro (€)",
+    "usd": "US dollar ($)",
+    "timezone": "Time zone",
+    "submit": "Continue"
+  },
+  "dashboard": {
+    "safeToSpend": "Safe to spend",
+    "safeToSpendNote": "This isn't your bank balance. It's what's left after card debt and your reserve.",
+    "howCalculated": "How it's calculated",
+    "available": "Available in spendable accounts",
+    "cardReserve": "Reserved for credit cards",
+    "protectedReserve": "Protected reserve",
+    "plannedComing": "Planned bills and goals are added in a later update.",
+    "netWorth": "Net worth",
+    "accounts": "Accounts",
+    "noAccounts": "Add your first account to get started",
+    "addAccount": "Add account",
+    "recent": "Recent activity",
+    "noTransactions": "Nothing recorded this month yet",
+    "addTransaction": "Add transaction",
+    "seeAll": "See all"
+  },
+  "accountTypes": {
+    "current": "Current account",
+    "savings": "Savings",
+    "cash": "Cash",
+    "card": "Credit card",
+    "loan": "Loan",
+    "investment": "Investment",
+    "lent": "Money lent to others",
+    "other_asset": "Other asset",
+    "other_liability": "Other debt"
+  },
+  "newAccount": {
+    "title": "Add an account",
+    "name": "Name",
+    "type": "Type",
+    "openingDate": "Tracking starts on",
+    "openingBalance": "Balance on that date",
+    "openingOwed": "Amount owed on that date",
+    "submit": "Add account"
+  },
+  "newTransaction": {
+    "title": "Add a transaction",
+    "expense": "Expense",
+    "income": "Income",
+    "transfer": "Transfer",
+    "amount": "Amount",
+    "account": "Account",
+    "from": "From",
+    "to": "To",
+    "category": "Category",
+    "date": "Date",
+    "description": "Description (optional)",
+    "submit": "Save",
+    "saved": "Saved",
+    "chooseAccount": "Choose an account",
+    "chooseCategory": "Choose a category",
+    "needAccount": "Add an account first."
+  },
+  "transactions": {
+    "title": "Activity",
+    "month": "Month",
+    "empty": "Nothing recorded in this month",
+    "kinds": {
+      "expense": "Expense",
+      "income": "Income",
+      "transfer": "Transfer",
+      "refund": "Refund",
+      "debt_payment": "Debt payment",
+      "split": "Split",
+      "opening_balance": "Opening balance",
+      "adjustment": "Adjustment",
+      "valuation": "Valuation"
+    }
+  },
+  "errors": {
+    "invalidAmount": "Enter an amount like 12.50.",
+    "required": "This field is required.",
+    "LEDGER_RULE": "That can't be saved: it breaks a bookkeeping rule.",
+    "VALIDATION_FAILED": "Check the highlighted fields.",
+    "INVALID_REFERENCE": "Something you picked no longer exists. Reload and try again.",
+    "futureDate": "Use today or an earlier date. Plan future items separately."
+  }
+}

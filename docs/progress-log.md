@@ -4,6 +4,50 @@ The running record of implementation work: what was built, what was verified, an
 
 ---
 
+## Stage 4 · Core application (started 3 Nov 2026)
+
+### Summary
+
+| Piece | Status |
+|---|---|
+| Next.js web app with the API mounted at `/api/*`, security headers, no telemetry | ✅ Done |
+| Translations through next-intl; English switched on (MKT-2); every visible text in `apps/web/messages/en.json` | ✅ Done |
+| Consent records at sign-up: terms, privacy notice, 18+ (never pre-ticked), optional marketing (Annex L items 6 and 17) | ✅ Done, tested |
+| Screens: sign-up, email verification, sign-in, onboarding (EUR or USD), dashboard, add account, add transaction, activity list | ✅ Done, checked in the browser |
+| Local development: `npm run dev:all` starts a local database and the web app; security emails print to the server log | ✅ Done |
+| Edit, void, trash and undo with versions; reconciliation; archive and merge; export; audit view | ⏳ Next |
+| "Keep me signed in", per-account login slowdown, account deletion | ⏳ Next |
+| CSV import (moved here from Stage 7, AP-15) | ⏳ After the above |
+| End-to-end browser tests (Playwright) | ⏳ Next |
+
+**Test run (3 Nov 2026):** 116 passed, 9 todo, 0 failed. Both type checks clean.
+
+### Checked in the browser (3 Nov 2026)
+
+Full flow with a local test account:
+1. Sign up (with the consent boxes) → "check your inbox".
+2. Follow the verification link from the server log → "your email is verified".
+3. Sign in → sent to onboarding, because there's no workspace yet.
+4. Choose EUR → empty dashboard.
+5. Add a Current account with "1,000.00" → Safe to Spend and net worth show €1,000.00.
+6. Add an expense of "45,60" in Food › Groceries → €954.40, and the expense appears in recent activity as "−€45.60".
+
+At 360 px wide there's no horizontal scrolling on the dashboard or the add-transaction screen, and every input, select and button has a label.
+
+### Technical choices made inside the approved design
+
+| # | Choice | Why | Reversible? |
+|---|---|---|---|
+| T-19 | **Next.js 16.4.2, React 19.1.10, next-intl 4.14.9**, pinned versions at least two weeks old | Approved stack (AD-01, AD-22). | Easy |
+| T-20 | The migration runner isn't exported from `@fintrack/db` | The web bundler tried to package the migrations folder; only scripts and tests run migrations. | — |
+| T-21 | **CSP:** no third-party origins at all, but `'unsafe-inline'` for scripts for now | Next.js needs inline scripts for hydration. A nonce-based policy replaces this **before launch** (Stage 8). | Easy |
+| T-22 | **Next.js telemetry switched off** in development | Nothing leaves the machine (AD-21). | — |
+| T-23 | **Sign-up consents** are checked before Better Auth does anything, and stored after the user is created; document versions are `draft-2026-11` until the lawyer-reviewed texts exist | So a refusal reveals nothing about existing emails (AC-01.2), and every consent records which text was accepted. | Easy |
+| T-24 | **Amount entry** accepts "12.50", "12,50", "1,234.56", "1.234,56" and "1 234,56"; when both separators appear, the last one is the decimal | People type both styles; anything ambiguous is rejected, never guessed. | Easy |
+| T-25 | **Known issue:** embedded PostgreSQL on Windows can leave orphaned worker processes after a test or dev run, which blocks the next dev start | Development only. The dev script now reports it clearly; a cleanup step will follow. | — |
+
+---
+
 ## Stage 3 · Ledger core, login and isolation (started 2 Nov 2026)
 
 ### Summary

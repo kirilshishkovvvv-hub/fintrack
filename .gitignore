@@ -7,3 +7,6 @@ coverage/
 *.log
 .DS_Store
 /.pgdata/
+.next/
+*.tsbuildinfo
+next-env.d.ts

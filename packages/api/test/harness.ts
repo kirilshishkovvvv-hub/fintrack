@@ -5,7 +5,9 @@
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { startTestDatabase, type TestDatabase } from '../../db/src/test-database.ts';
-import { createApp, createAuth, type OutgoingEmail } from '../src/index.ts';
+import { createApp, createAuth, createConsentRecorder, type OutgoingEmail } from '../src/index.ts';
+
+export const CONSENTS = { terms: true, privacy: true, age18: true };
 
 export const ORIGIN = 'http://localhost:3000';
 export const PASSWORD = 'correct horse battery staple';
@@ -30,6 +32,7 @@ export async function startHarness(): Promise<Harness> {
     },
     checkBreachedPasswords: false,
     secureCookies: false,
+    recordConsents: createConsentRecorder(database.pool),
   });
   const handle = createApp({ pool: database.pool, auth, allowedOrigin: ORIGIN });
   return {
@@ -84,7 +87,9 @@ export class Client {
 /** Signs a new user up, follows the verification link, and signs them in. */
 export async function verifiedUser(harness: Harness, email: string): Promise<Client> {
   const client = new Client(harness);
-  const signUp = await client.call('POST', '/api/auth/sign-up/email', { body: { email, password: PASSWORD, name: email.split('@')[0] } });
+  const signUp = await client.call('POST', '/api/auth/sign-up/email', {
+    body: { email, password: PASSWORD, name: email.split('@')[0], consents: CONSENTS },
+  });
   if (signUp.status !== 200) throw new Error(`sign-up failed: ${signUp.status} ${JSON.stringify(signUp.body)}`);
   const verification = [...harness.emails].reverse().find((sent) => sent.to === email && sent.kind === 'verify-email');
   if (!verification) throw new Error('no verification email was sent');

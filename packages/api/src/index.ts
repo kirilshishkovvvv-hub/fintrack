@@ -1,2 +1,10 @@
 export { createApp, type AppDependencies } from './app.ts';
-export { createAuth, type Auth, type AuthDependencies, type OutgoingEmail } from './auth.ts';
+export {
+  createAuth,
+  createConsentRecorder,
+  LEGAL_VERSIONS,
+  type Auth,
+  type AuthDependencies,
+  type OutgoingEmail,
+  type SignUpConsents,
+} from './auth.ts';

@@ -3,7 +3,7 @@
  * CSRF protection, isolation between users (GT-59, ISO-1 to ISO-5) and a USD workspace (GT-70).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { Client, key, PASSWORD, startHarness, verifiedUser, type Harness } from './harness.ts';
+import { Client, CONSENTS, key, PASSWORD, startHarness, verifiedUser, type Harness } from './harness.ts';
 
 let harness: Harness;
 
@@ -35,13 +35,13 @@ async function setUpGt03(client: Client, currency: 'EUR' | 'USD') {
 describe('login (FR-01)', () => {
   test('passwords under 12 characters are rejected (BR-01.2)', async () => {
     const client = new Client(harness);
-    const result = await client.call('POST', '/api/auth/sign-up/email', { body: { email: 'short@example.com', password: 'short-pass', name: 'Short' } });
+    const result = await client.call('POST', '/api/auth/sign-up/email', { body: { email: 'short@example.com', password: 'short-pass', name: 'Short', consents: CONSENTS } });
     expect(result.status).toBe(400);
   });
 
   test('an unverified account cannot sign in or reach financial data (AC-01.1)', async () => {
     const client = new Client(harness);
-    await client.call('POST', '/api/auth/sign-up/email', { body: { email: 'unverified@example.com', password: PASSWORD, name: 'Unverified' } });
+    await client.call('POST', '/api/auth/sign-up/email', { body: { email: 'unverified@example.com', password: PASSWORD, name: 'Unverified', consents: CONSENTS } });
     const signIn = await client.call('POST', '/api/auth/sign-in/email', { body: { email: 'unverified@example.com', password: PASSWORD } });
     expect(signIn.status).toBe(403);
     expect((await client.call('GET', '/api/v1/workspace')).status).toBe(401);
@@ -49,10 +49,36 @@ describe('login (FR-01)', () => {
 
   test('signing up again with an existing email looks the same as a new sign-up (AC-01.2)', async () => {
     await verifiedUser(harness, 'existing@example.com');
-    const fresh = await new Client(harness).call('POST', '/api/auth/sign-up/email', { body: { email: 'brand-new@example.com', password: PASSWORD, name: 'x' } });
-    const again = await new Client(harness).call('POST', '/api/auth/sign-up/email', { body: { email: 'existing@example.com', password: PASSWORD, name: 'x' } });
+    const fresh = await new Client(harness).call('POST', '/api/auth/sign-up/email', { body: { email: 'brand-new@example.com', password: PASSWORD, name: 'x', consents: CONSENTS } });
+    const again = await new Client(harness).call('POST', '/api/auth/sign-up/email', { body: { email: 'existing@example.com', password: PASSWORD, name: 'x', consents: CONSENTS } });
     expect(again.status).toBe(fresh.status);
     expect(Object.keys(again.body ?? {}).sort()).toEqual(Object.keys(fresh.body ?? {}).sort());
+  });
+
+  test('sign-up needs the terms, the privacy notice and the 18+ confirmation (Annex L items 6, 17)', async () => {
+    const missing = [{}, { terms: true, privacy: true }, { terms: true, privacy: true, age18: false }, { terms: 'yes', privacy: true, age18: true }];
+    for (const consents of missing) {
+      const result = await new Client(harness).call('POST', '/api/auth/sign-up/email', {
+        body: { email: 'no-consent@example.com', password: PASSWORD, name: 'x', consents },
+      });
+      expect(result.status, JSON.stringify(consents)).toBe(400);
+    }
+    const users = await harness.database.pool.query(`SELECT 1 FROM auth."user" WHERE email = 'no-consent@example.com'`);
+    expect(users.rowCount).toBe(0);
+  });
+
+  test('accepted consents are stored with their document versions, marketing off by default', async () => {
+    await verifiedUser(harness, 'consent@example.com');
+    const result = await harness.database.pool.query(
+      `SELECT c.document, c.version, c.accepted FROM fin.consent_records c
+         JOIN auth."user" u ON u.id = c.user_id WHERE u.email = 'consent@example.com' ORDER BY c.document`,
+    );
+    expect(result.rows).toEqual([
+      { document: 'age_18', version: '1', accepted: true },
+      { document: 'marketing', version: '1', accepted: false },
+      { document: 'privacy', version: 'draft-2026-11', accepted: true },
+      { document: 'terms', version: 'draft-2026-11', accepted: true },
+    ]);
   });
 
   test('passwords are stored as Argon2id hashes', async () => {
