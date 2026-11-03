@@ -25,6 +25,12 @@ export interface TestDatabase {
  */
 export const NO_IO_WORKERS = ['-c', 'io_method=sync'];
 
+/**
+ * Local clusters are UTF-8 with the C locale, whatever the machine's language: otherwise initdb
+ * picks the system code page (WIN1251 on a Bulgarian Windows) and non-Cyrillic text can't be stored.
+ */
+export const UTF8_CLUSTER = ['--encoding=UTF8', '--locale=C'];
+
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -45,6 +51,7 @@ export async function startTestDatabase(): Promise<TestDatabase> {
     user: 'postgres',
     password,
     persistent: false,
+    initdbFlags: UTF8_CLUSTER,
     postgresFlags: NO_IO_WORKERS,
     onLog: () => undefined,
     onError: () => undefined,

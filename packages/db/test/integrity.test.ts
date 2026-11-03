@@ -5,7 +5,18 @@
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { build, type LedgerAccount } from '@fintrack/domain';
-import { createWorkspace, insertLedgerAccount, insertTransaction, loadChart, uuidv7, withWorkspace, type Db } from '../src/index.ts';
+import {
+  createWorkspace,
+  insertLedgerAccount,
+  insertReconciliation,
+  insertTransaction,
+  listReconciliations,
+  loadChart,
+  unlockReconciliation,
+  uuidv7,
+  withWorkspace,
+  type Db,
+} from '../src/index.ts';
 import { startTestDatabase, type TestDatabase } from '../src/test-database.ts';
 
 let database: TestDatabase;
@@ -155,9 +166,86 @@ describe('ledger rules in the database (LR-04, LR-05, LR-14)', () => {
   });
 });
 
+describe('the reconciliation lock (FR-18, AC-18.2)', () => {
+  /** A fresh expense in A, reconciled on 31 Mar. Returns its id and the reconciliation's. */
+  async function reconciledExpense(): Promise<{ tx: string; reconciliation: string }> {
+    const tx = await asA((db) => rawTransaction(db, a, 'expense', '2026-03-20', [[a.current, -500], [a.food, 500]]));
+    const reconciliation = uuidv7();
+    await asA((db) =>
+      insertReconciliation(db, a.context.workspaceId, {
+        id: reconciliation,
+        accountId: a.current,
+        statementDate: '2026-03-31',
+        statementBalance: 0,
+        adjustmentTransactionId: null,
+        transactionIds: [tx],
+        userId: a.context.userId,
+      }),
+    );
+    return { tx, reconciliation };
+  }
+
+  test("a reconciled transaction's postings can't be changed, removed or added to", async () => {
+    const { tx } = await reconciledExpense();
+    await rejectsWith('FTL01', asA((db) => db.query('UPDATE fin.postings SET amount_minor = -600 WHERE transaction_id = $1 AND amount_minor < 0', [tx])));
+    await rejectsWith('FTL01', asA((db) => db.query('DELETE FROM fin.postings WHERE transaction_id = $1', [tx])));
+    await rejectsWith(
+      'FTL01',
+      asA((db) =>
+        db.query(
+          `INSERT INTO fin.postings (id, workspace_id, transaction_id, txn_date, txn_status, ledger_account_id, amount_minor, currency, line_no)
+           VALUES ($1, $2, $3, '2026-03-20', 'posted', $4, 1, 'EUR', 9)`,
+          [uuidv7(), a.context.workspaceId, tx, a.food],
+        ),
+      ),
+    );
+  });
+
+  test("a reconciled transaction can't be voided, deleted or moved to another date", async () => {
+    const { tx } = await reconciledExpense();
+    await rejectsWith('FTL01', asA((db) => db.query("UPDATE fin.transactions SET status = 'voided', voided_at = now() WHERE id = $1", [tx])));
+    await rejectsWith('FTL01', asA((db) => db.query("UPDATE fin.transactions SET status = 'trashed', trashed_at = now() WHERE id = $1", [tx])));
+    await rejectsWith('FTL01', asA((db) => db.query("UPDATE fin.transactions SET txn_date = '2026-03-21' WHERE id = $1", [tx])));
+  });
+
+  test('a category merge may re-point a reconciled category line, because no account balance changes (E-59)', async () => {
+    const { tx } = await reconciledExpense();
+    const dining = uuidv7();
+    await asA((db) => insertLedgerAccount(db, a.context.workspaceId, { id: dining, name: 'Dining', kind: 'expense', category: {} }));
+    const moved = await asA((db) => db.query('UPDATE fin.postings SET ledger_account_id = $2 WHERE transaction_id = $1 AND ledger_account_id = $3', [tx, dining, a.food]));
+    expect(moved.rowCount).toBe(1);
+    await rejectsWith('FTL01', asA((db) => db.query('UPDATE fin.postings SET ledger_account_id = $2 WHERE transaction_id = $1 AND ledger_account_id = $3', [tx, a.closed, a.current])));
+  });
+
+  test('unlocking releases the lock and marks the reconciliation broken; its statement and items stay as they were', async () => {
+    const { tx, reconciliation } = await reconciledExpense();
+    expect(await asA((db) => unlockReconciliation(db, a.context.workspaceId, reconciliation, a.context.userId))).toBe(true);
+    await asA((db) => db.query('UPDATE fin.postings SET amount_minor = amount_minor * 2 WHERE transaction_id = $1', [tx]));
+    const row = (await asA((db) => listReconciliations(db, a.context.workspaceId))).find((r) => r.id === reconciliation)!;
+    expect(row.status).toBe('broken');
+    expect(row.transactionIds).toEqual([tx]);
+    await rejectsWith('42501', asA((db) => db.query('UPDATE fin.reconciliations SET statement_balance_minor = 1 WHERE id = $1', [reconciliation])));
+    await rejectsWith('23514', asA((db) => db.query("UPDATE fin.reconciliations SET status = 'completed', unlocked_at = NULL, unlocked_by = NULL WHERE id = $1", [reconciliation])));
+    await rejectsWith('42501', asA((db) => db.query('DELETE FROM fin.reconciliation_items WHERE reconciliation_id = $1', [reconciliation])));
+  });
+});
+
+describe('text in every planned language (MKT-2)', () => {
+  test('descriptions in Greek, Bulgarian, German and with emoji are stored exactly', async () => {
+    const text = 'Λαϊκή αγορά · Пазар · Straße · ☕';
+    const tx = await asA((db) => rawTransaction(db, a, 'expense', '2026-03-22', [[a.current, -100], [a.food, 100]]));
+    await asA((db) => db.query('UPDATE fin.transactions SET description = $2 WHERE id = $1', [tx, text]));
+    const stored = await asA(async (db) => (await db.query('SELECT description FROM fin.transactions WHERE id = $1', [tx])).rows[0].description);
+    expect(stored).toBe(text);
+  });
+});
+
 describe('isolation between workspaces (FR-02, ISO-6, ISO-7)', () => {
   test("B sees none of A's rows in any table", async () => {
-    const tables = ['workspaces', 'ledger_accounts', 'accounts', 'categories', 'transactions', 'postings', 'transaction_versions', 'audit_events'];
+    const tables = [
+      'workspaces', 'ledger_accounts', 'accounts', 'categories', 'transactions', 'postings', 'transaction_versions', 'audit_events',
+      'reconciliations', 'reconciliation_items',
+    ];
     await asB(async (db) => {
       for (const table of tables) {
         const result = await db.query(`SELECT count(*)::int AS n FROM fin.${table} WHERE workspace_id = $1`.replace(

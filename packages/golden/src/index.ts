@@ -2,14 +2,15 @@ import type { Scenario } from './scenario.ts';
 import { basics } from './scenarios/basics.ts';
 import { cardsAndDebts } from './scenarios/cards-and-debts.ts';
 import { lifecycle } from './scenarios/lifecycle.ts';
+import { reconciliation } from './scenarios/reconciliation.ts';
 import { refunds } from './scenarios/refunds.ts';
 
 export * from './scenario.ts';
 export { MemoryBook, runInMemory, type BookEvent } from './memory-runner.ts';
 export { verifyCheck } from './verify.ts';
 
-/** Golden scenarios: pure ledger behaviour (Stage 3) and the transaction lifecycle (Stage 4). */
-export const scenarios: Scenario[] = [...basics, ...cardsAndDebts, ...refunds, ...lifecycle];
+/** Golden scenarios: pure ledger behaviour (Stage 3); the lifecycle and reconciliation (Stage 4). */
+export const scenarios: Scenario[] = [...basics, ...cardsAndDebts, ...refunds, ...lifecycle, ...reconciliation];
 
 /**
  * Golden tests from §6 that aren't encoded yet, with the stage that brings the feature

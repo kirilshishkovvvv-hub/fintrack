@@ -8,7 +8,7 @@ import { AppShell } from '@/components/AppShell';
 import { useUndo } from '@/components/UndoToast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { parseUserAmount } from '@/lib/money';
-import { loadAccounts, loadCategories, todayLocal, useApiData, type Category, type Transaction } from '@/lib/use-api';
+import { active, loadAccounts, loadCategories, todayLocal, useApiData, type Category, type Transaction } from '@/lib/use-api';
 
 type Kind = 'expense' | 'income' | 'transfer';
 
@@ -32,7 +32,7 @@ export default function NewTransactionPage() {
       </AppShell>
     );
   }
-  if (data.accounts.length === 0) {
+  if (active(data.accounts).length === 0) {
     return (
       <AppShell>
         <p className="notice notice-info">
@@ -42,7 +42,7 @@ export default function NewTransactionPage() {
     );
   }
 
-  const categories = data.categories.filter((category) => category.kind === (kind === 'income' ? 'income' : 'expense'));
+  const categories = active(data.categories).filter((category) => category.kind === (kind === 'income' ? 'income' : 'expense'));
   const label = (category: Category) => {
     const parent = category.parentId ? data.categories.find((candidate) => candidate.id === category.parentId) : undefined;
     return parent ? `${parent.name} › ${category.name}` : category.name;
@@ -76,7 +76,7 @@ export default function NewTransactionPage() {
     }
   }
 
-  const accountOptions = data.accounts.map((account) => (
+  const accountOptions = active(data.accounts).map((account) => (
     <option key={account.id} value={account.id}>
       {account.name}
     </option>
@@ -107,7 +107,7 @@ export default function NewTransactionPage() {
             </div>
             <div className="field">
               <label htmlFor="to">{t('to')}</label>
-              <select id="to" name="to" required defaultValue={data.accounts[1]?.id}>
+              <select id="to" name="to" required defaultValue={active(data.accounts)[1]?.id}>
                 {accountOptions}
               </select>
             </div>

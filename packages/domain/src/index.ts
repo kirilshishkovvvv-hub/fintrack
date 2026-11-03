@@ -6,3 +6,4 @@ export * as build from './build.ts';
 export type { CategoryLine } from './build.ts';
 export * from './metrics.ts';
 export * from './sts.ts';
+export * from './reconcile.ts';

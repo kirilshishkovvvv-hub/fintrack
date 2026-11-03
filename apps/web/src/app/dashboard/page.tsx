@@ -2,16 +2,16 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { AccountRow } from '@/components/AccountRow';
 import { AppShell } from '@/components/AppShell';
 import { TransactionRow } from '@/components/TransactionRow';
 import { api } from '@/lib/api';
 import { formatMoney } from '@/lib/money';
-import { currentMonth, loadAccounts, loadCategories, loadSummary, useApiData, type Transaction } from '@/lib/use-api';
+import { active, currentMonth, loadAccounts, loadCategories, loadSummary, useApiData, type Transaction } from '@/lib/use-api';
 
 export default function DashboardPage() {
   const t = useTranslations('dashboard');
   const tApp = useTranslations('app');
-  const tTypes = useTranslations('accountTypes');
   const { data, failed, reload } = useApiData(async () => {
     const month = currentMonth();
     const [summary, accounts, categories, transactions] = await Promise.all([
@@ -107,18 +107,7 @@ export default function DashboardPage() {
         {accounts.length === 0 ? (
           <p className="muted">{t('noAccounts')}</p>
         ) : (
-          accounts.map((account) => (
-            <div className="row" key={account.id}>
-              <div className="row-main">
-                <div className="row-title">{account.name}</div>
-                <div className="small muted">{tTypes(account.type)}</div>
-              </div>
-              <span className="amount">
-                {account.class === 'liability' && account.balance_minor > 0 ? '−' : account.balance_minor < 0 ? '−' : ''}
-                {formatMoney(Math.abs(account.balance_minor), currency)}
-              </span>
-            </div>
-          ))
+          active(accounts).map((account) => <AccountRow key={account.id} account={account} currency={currency} />)
         )}
         <Link href="/accounts/new" className="btn" style={{ marginTop: '0.75rem' }}>
           {t('addAccount')}

@@ -51,6 +51,11 @@ export function TransactionRow({
         <div className="row-title">
           {title}
           {voided && <span className="badge">{t('voided')}</span>}
+          {tx.reconciled && (
+            <span className="lock-icon" role="img" aria-label={t('reconciled')} title={t('reconciled')}>
+              🔒
+            </span>
+          )}
         </div>
         <div className="small muted">{detail}</div>
       </div>

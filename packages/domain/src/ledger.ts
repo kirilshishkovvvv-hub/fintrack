@@ -88,6 +88,11 @@ export class Chart {
     return account;
   }
 
+  /** Archived accounts and categories receive no postings but keep their history (LR-14, E-58, E-59). */
+  markArchived(id: string): void {
+    this.byId.set(id, { ...this.get(id), archived: true });
+  }
+
   get(id: string): LedgerAccount {
     const account = this.byId.get(id);
     if (!account) throw new Error(`Unknown ledger account: ${id}`);

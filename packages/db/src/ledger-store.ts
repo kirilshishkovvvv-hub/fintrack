@@ -103,6 +103,30 @@ export function snapshotOf(tx: Transaction, text: TransactionText): TransactionS
   };
 }
 
+/** Archives or unarchives an account or category (E-58, E-59). History stays; LR-14 then blocks new postings. */
+export async function setArchived(db: Db, workspaceId: string, ledgerAccountId: string, archived: boolean): Promise<void> {
+  await db.query(
+    `UPDATE fin.ledger_accounts
+        SET is_archived = $3, archived_at = CASE WHEN $3 THEN now() END, version = version + 1, updated_at = now()
+      WHERE workspace_id = $1 AND id = $2`,
+    [workspaceId, ledgerAccountId, archived],
+  );
+}
+
+/**
+ * Merges category `fromId` into `intoId` (E-59, GT-45): every posting is re-pointed with its
+ * amount unchanged, then `fromId` is archived. Returns how many postings moved.
+ */
+export async function mergeCategory(db: Db, workspaceId: string, fromId: string, intoId: string): Promise<number> {
+  const moved = await db.query('UPDATE fin.postings SET ledger_account_id = $3 WHERE workspace_id = $1 AND ledger_account_id = $2', [
+    workspaceId,
+    fromId,
+    intoId,
+  ]);
+  await setArchived(db, workspaceId, fromId, true);
+  return moved.rowCount ?? 0;
+}
+
 /** Saves a validated transaction with its postings and a "create" version (LR-03, LR-10). */
 export async function insertTransaction(
   db: Db,

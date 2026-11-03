@@ -16,7 +16,8 @@ The running record of implementation work: what was built, what was verified, an
 | Screens: sign-up, email verification, sign-in, onboarding (EUR or USD), dashboard, add account, add transaction, activity list | ✅ Done, checked in the browser |
 | Local development: `npm run dev:all` starts a local database and the web app; security emails print to the server log | ✅ Done |
 | Edit, void, delete to trash, restore and undo, with a version history per transaction; 30-day trash purge | ✅ Done, tested, checked in the browser |
-| Reconciliation; archive and merge; export; audit view | ⏳ Next |
+| Reconciliation with adjustments and locks, quick balance update, archive and merge (GT-40 to GT-42, GT-45) | ✅ Done and tested (177 tests); screens built; **browser check still to do** |
+| Export; audit view | ⏳ Next |
 | "Keep me signed in", per-account login slowdown, account deletion | ⏳ Next |
 | CSV import (moved here from Stage 7, AP-15) | ⏳ After the above |
 | End-to-end browser tests (Playwright) | ⏳ Next |
@@ -95,6 +96,10 @@ At 360 px wide there's no horizontal scrolling on the dashboard or the add-trans
 | T-28 | **Not editable through the edit form or `PATCH`:** opening balances, adjustments and valuations. They change through the account and reconciliation flows. The edit screen handles one-category expenses and income and plain transfers; other shapes (splits, fees) can be voided or deleted and re-entered for now | Keeps those system postings tied to their own rules (LR-05). Editing splits in the UI comes later. | Easy |
 | T-29 | **Purging uses a separate role, `fin_maintenance`** (migration 0004). Row-level security limits it to trashed transactions, the refunds that point at them, expired idempotency records and new audit events. The purge function exists and is tested; its schedule comes with the background worker (Stage 8). **Production login roles:** the web server's login belongs only to `fin_app`, the worker's only to `fin_maintenance`, and migrations run as the owner | The application role still can't delete anything (Stage 2 §6.3). A test proves the web login can't switch roles. | Moderate |
 | T-30 | **Session refresh cookies are passed on in every API response** | Fixes T-10: without it, the 30-minute idle limit acted as an absolute limit (found in the browser). | — |
+| T-32 | **Reconciliation items are stored per transaction** (`fin.reconciliation_items`, migration 0005) instead of the planned `postings.reconciliation_id`, which is dropped | An edit replaces postings, and a broken reconciliation must still know what it covered (GT-42). A database trigger enforces the lock (SQLSTATE FTL01 → `LOCKED_RECONCILED`); only a category merge may move a locked category line. | Moderate |
+| T-33 | **Preview and finish instead of a server-side draft:** `POST /reconciliations/preview` returns the figures for the ticks so far; `POST /reconciliations` finishes it. Unlocking also unlocks later reconciliations of the same account; a new reconciliation supersedes broken ones | Simpler than storing drafts, with the same rules. | Easy |
+| T-34 | **Default category "Untracked spending"** added to the seed | Named by E-37 and GT-41. | Easy |
+| T-35 | **Local PostgreSQL clusters are UTF-8** (`--encoding=UTF8 --locale=C`), and migrations refuse a non-UTF-8 database | Found while testing: on this machine initdb picked WIN1251, which can't store Greek or emoji. **The existing local dev cluster (`.pgdata/cluster`) is WIN1251 and must be recreated** before `npm run dev:all` starts again; it holds only test data. | — |
 | T-31 | **Lifecycle rules as written in §9.3:** only a posted transaction can be edited, voided or deleted; voided and deleted ones can only be restored. Restoring re-checks the ledger rules (for example an archived account, LR-14), and a deleted transaction older than 30 days can't be restored | Follows the approved lifecycle table exactly. | — |
 
 ---

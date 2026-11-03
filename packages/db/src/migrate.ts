@@ -10,6 +10,12 @@ import type pg from 'pg';
 export const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations/', import.meta.url));
 
 export async function migrate(client: pg.Client | pg.PoolClient, directory = MIGRATIONS_DIR): Promise<string[]> {
+  // Names, descriptions and memos can be in any of the planned languages (MKT-2), so the
+  // database must store all of Unicode. A cluster created in a local code page would not.
+  const encoding = (await client.query<{ encoding: string }>("SELECT pg_encoding_to_char(encoding) AS encoding FROM pg_database WHERE datname = current_database()")).rows[0]?.encoding;
+  if (encoding !== 'UTF8') {
+    throw new Error(`The database uses ${encoding} encoding; it must be UTF8. Create it with ENCODING 'UTF8' TEMPLATE template0`);
+  }
   await client.query(`
     CREATE SCHEMA IF NOT EXISTS ops;
     CREATE TABLE IF NOT EXISTS ops.schema_migrations (

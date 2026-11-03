@@ -130,3 +130,8 @@ export function adjustment(
   const counterId = base.counterId ?? chart.system('ADJ').id;
   return transaction(base, 'adjustment', [posting(account.id, signed), posting(counterId, -signed)]);
 }
+
+/** A valuation change of an investment or other asset against VAL (E-43): never income (LR-12). */
+export function valuation(chart: Chart, base: Base & { accountId: string; delta: Cents }): Transaction {
+  return transaction(base, 'valuation', [posting(base.accountId, base.delta), posting(chart.system('VAL').id, -base.delta)]);
+}

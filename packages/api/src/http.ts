@@ -19,6 +19,9 @@ export type ProblemCode =
   | 'INVALID_STATE'
   | 'NOT_EDITABLE'
   | 'UNDO_EXPIRED'
+  | 'LOCKED_RECONCILED'
+  | 'RECONCILIATION_DIFFERENCE'
+  | 'ARCHIVE_BLOCKED'
   | 'INTERNAL';
 
 export class ApiError extends Error {

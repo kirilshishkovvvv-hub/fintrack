@@ -127,6 +127,10 @@ input[type='text'], input[type='email'], input[type='password'], input[type='dat
 .row-voided .amount, .row-voided .row-title { text-decoration: line-through; color: var(--text-muted); }
 .badge { display: inline-block; margin-left: 0.5rem; padding: 0 0.45rem; border-radius: 999px; background: var(--warning-tint); color: var(--warning); font-size: 0.75rem; font-weight: 600; text-decoration: none; vertical-align: middle; }
 .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.lock-icon { margin-left: 0.4rem; font-size: 0.8rem; text-decoration: none; display: inline-block; }
+fieldset.choice { border: 0; padding: 0; margin: 0; display: grid; gap: 0.75rem; }
+fieldset.choice legend { font-weight: 600; padding: 0; margin-bottom: 0.5rem; }
+label.row.check { align-items: center; cursor: pointer; }
 .btn-danger { color: var(--danger); }
 .history { list-style: none; margin: 0; padding: 0; }
 .history li { padding: 0.5rem 0; border-top: 1px solid var(--border); }

@@ -38,5 +38,7 @@ export const DEFAULT_CATEGORIES: SeedCategory[] = [
   { systemKey: 'expense.taxes', name: 'Taxes', kind: 'expense' },
   { systemKey: 'expense.interest_fees', name: 'Interest and fees', kind: 'expense' },
   { systemKey: 'expense.bank_fees', name: 'Bank fees', kind: 'expense' },
+  // E-37, GT-41: the category a cash difference goes to when the user says "I spent it".
+  { systemKey: 'expense.untracked', name: 'Untracked spending', kind: 'expense' },
   { systemKey: 'expense.other', name: 'Other expenses', kind: 'expense' },
 ];

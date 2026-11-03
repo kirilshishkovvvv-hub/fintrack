@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { migrate } from '../packages/db/src/migrate.ts';
-import { NO_IO_WORKERS } from '../packages/db/src/test-database.ts';
+import { NO_IO_WORKERS, UTF8_CLUSTER } from '../packages/db/src/test-database.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dataRoot = path.join(root, '.pgdata');
@@ -40,6 +40,7 @@ const cluster = new EmbeddedPostgres({
   user: 'postgres',
   password: secrets.dbPassword,
   persistent: true,
+  initdbFlags: UTF8_CLUSTER,
   postgresFlags: NO_IO_WORKERS,
   onLog: () => undefined,
   onError: (message) => console.error(`[dev] postgres: ${String(message).trim()}`),
@@ -56,7 +57,7 @@ const adminUrl = `postgres://postgres:${encodeURIComponent(secrets.dbPassword)}@
 const admin = new pg.Client({ connectionString: adminUrl });
 await admin.connect();
 const exists = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [DATABASE]);
-if (exists.rowCount === 0) await admin.query(`CREATE DATABASE ${DATABASE}`);
+if (exists.rowCount === 0) await admin.query(`CREATE DATABASE ${DATABASE} ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0`);
 await admin.end();
 
 const databaseUrl = `postgres://postgres:${encodeURIComponent(secrets.dbPassword)}@127.0.0.1:${PORT}/${DATABASE}`;

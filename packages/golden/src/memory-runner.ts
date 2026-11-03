@@ -4,10 +4,12 @@
  * application services will do it.
  */
 import {
+  balanceUpdateDelta,
   build,
   Chart,
   Ledger,
   parseAmount,
+  reconcile,
   validateTransaction,
   type AccountClass,
   type AccountType,
@@ -21,7 +23,9 @@ import type { Line, Op, Scenario, TransactionOp } from './scenario.ts';
 export type BookEvent =
   | { type: 'insert'; tx: Transaction }
   | { type: 'replace'; tx: Transaction }
-  | { type: 'status'; id: string; status: Transaction['status'] };
+  | { type: 'status'; id: string; status: Transaction['status'] }
+  | { type: 'archive'; ledgerAccountId: string }
+  | { type: 'merge'; fromId: string; intoId: string };
 
 /** The latest date any scenario uses; transactions are validated against it as "today". */
 const VALIDATION_TODAY = '2026-12-31';
@@ -51,6 +55,8 @@ const CATEGORIES: Record<string, { kind: 'income' | 'expense'; parent?: string }
   Interest: { kind: 'expense' },
   Rent: { kind: 'expense' },
   Utilities: { kind: 'expense' },
+  Restaurants: { kind: 'expense' },
+  'Untracked spending': { kind: 'expense' },
 };
 
 const BASELINES: Record<Scenario['base'], Op[]> = {
@@ -116,14 +122,64 @@ export class MemoryBook {
         this.events.push({ type: 'status', id: tx.id, status });
         return;
       }
+      case 'reconcile': {
+        const cleared = new Set(
+          this.transactions
+            .filter((tx) => tx.status === 'posted' && tx.date <= op.date && tx.postings.some((p) => p.ledgerAccountId === op.account))
+            .map((tx) => tx.id),
+        );
+        const figures = reconcile(this.ledger, { accountId: op.account, statementBalance: parseAmount(op.statement), cleared });
+        if (figures.difference === 0) return;
+        if (!op.adjustTo) throw new Error(`Reconciling ${op.account} leaves a difference of ${figures.difference}`);
+        const counter = op.adjustTo === 'ADJ' ? {} : { counterId: op.adjustTo };
+        this.post(build.adjustment(this.chart, { id: this.nextId(), date: op.date, accountId: op.account, delta: figures.adjustment, ...counter }));
+        return;
+      }
+      case 'balanceUpdate': {
+        const delta = balanceUpdateDelta(this.ledger, { accountId: op.account, date: op.date, actual: parseAmount(op.actual) });
+        if (delta === 0) return;
+        const base = { id: this.nextId(), date: op.date, accountId: op.account, delta };
+        const cash = this.chart.get(op.account).account?.class === 'cash';
+        this.post(
+          cash
+            ? build.adjustment(this.chart, op.category ? { ...base, counterId: op.category } : base)
+            : build.valuation(this.chart, base),
+        );
+        return;
+      }
+      case 'archive': {
+        const account = this.chart.get(op.name);
+        if (account.account && this.ledger.rawBalance(op.name, VALIDATION_TODAY) !== 0) {
+          throw new Error(`${op.name} can't be archived with a balance (AC-19.3)`);
+        }
+        this.chart.markArchived(op.name);
+        this.events.push({ type: 'archive', ledgerAccountId: op.name });
+        return;
+      }
+      case 'merge': {
+        for (const [index, tx] of this.transactions.entries()) {
+          if (!tx.postings.some((p) => p.ledgerAccountId === op.from)) continue;
+          this.transactions[index] = {
+            ...tx,
+            postings: tx.postings.map((p) => (p.ledgerAccountId === op.from ? { ...p, ledgerAccountId: op.into } : p)),
+          };
+        }
+        this.chart.markArchived(op.from);
+        this.events.push({ type: 'merge', fromId: op.from, intoId: op.into });
+        return;
+      }
       default: {
         const tx = this.buildTransaction(op);
-        validateTransaction(tx, this.chart, { today: VALIDATION_TODAY });
-        this.transactions.push(tx);
-        this.events.push({ type: 'insert', tx });
+        this.post(tx);
         if (op.ref) this.refs.set(op.ref, tx.id);
       }
     }
+  }
+
+  private post(tx: Transaction): void {
+    validateTransaction(tx, this.chart, { today: VALIDATION_TODAY });
+    this.transactions.push(tx);
+    this.events.push({ type: 'insert', tx });
   }
 
   private indexOf(ref: string): number {

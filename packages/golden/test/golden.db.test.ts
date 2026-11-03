@@ -8,7 +8,9 @@ import { Ledger, type LedgerAccount, type Transaction } from '@fintrack/domain';
 import {
   changeTransactionStatus,
   createWorkspace,
+  mergeCategory,
   replaceTransaction,
+  setArchived,
   insertLedgerAccount,
   insertTransaction,
   loadChart,
@@ -54,7 +56,9 @@ describe('golden scenarios (PostgreSQL round trip)', () => {
           // Parents before children, so the category foreign key is satisfied.
           custom.sort((a, b) => Number(a.category?.parentId !== undefined) - Number(b.category?.parentId !== undefined));
           for (const account of custom) {
-            const mapped: LedgerAccount = { ...account, id: ids.get(account.id)! };
+            // Archiving is replayed from the book's history, at the point it happened.
+            const { archived: _archived, ...active } = account;
+            const mapped: LedgerAccount = { ...active, id: ids.get(account.id)! };
             if (account.category?.parentId) mapped.category = { parentId: ids.get(account.category.parentId)! };
             await insertLedgerAccount(db, context.workspaceId, mapped);
           }
@@ -86,6 +90,10 @@ describe('golden scenarios (PostgreSQL round trip)', () => {
                 memo: null,
               });
               versions.set(event.tx.id, result.version);
+            } else if (event.type === 'archive') {
+              await setArchived(db, context.workspaceId, ids.get(event.ledgerAccountId)!, true);
+            } else if (event.type === 'merge') {
+              await mergeCategory(db, context.workspaceId, ids.get(event.fromId)!, ids.get(event.intoId)!);
             } else {
               const type = event.status === 'posted' ? 'restore' : event.status === 'voided' ? 'void' : 'trash';
               const result = await changeTransactionStatus(db, context.workspaceId, ids.get(event.id)!, {

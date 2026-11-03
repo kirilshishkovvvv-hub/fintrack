@@ -32,6 +32,15 @@ export class Ledger {
     return this.chart.get(accountId).kind === 'liability' ? -raw : raw;
   }
 
+  /**
+   * The cleared balance for a reconciliation (FR-18): the account's postings in the given
+   * transactions only, shown the way `balance` shows it. Voided and trashed ones never count.
+   */
+  clearedBalance(accountId: string, transactionIds: ReadonlySet<string>): Cents {
+    const raw = this.sum((tx, p) => p.ledgerAccountId === accountId && transactionIds.has(tx.id));
+    return this.chart.get(accountId).kind === 'liability' ? -raw : raw;
+  }
+
   cashBalance(onDate: IsoDate): Cents {
     return this.sum((tx, p) => tx.date <= onDate && this.isCash(this.chart.get(p.ledgerAccountId)));
   }

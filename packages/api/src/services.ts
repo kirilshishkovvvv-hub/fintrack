@@ -26,6 +26,7 @@ import {
   loadTransactionRecord,
   loadTransactionRecords,
   loadTransactions,
+  lockedTransactionIds,
   recordAuditEvent,
   replaceTransaction,
   uuidv7,
@@ -165,7 +166,7 @@ export async function listAccounts(db: Db, context: RequestContext) {
     .map((account) => accountDto(ledger, account, today));
 }
 
-function accountDto(ledger: Ledger, account: LedgerAccount, today: string) {
+export function accountDto(ledger: Ledger, account: LedgerAccount, today: string) {
   const info = account.account!;
   return {
     id: account.id,
@@ -200,7 +201,7 @@ export async function listCategories(db: Db, context: RequestContext) {
     .map(categoryDto);
 }
 
-function categoryDto(account: LedgerAccount) {
+export function categoryDto(account: LedgerAccount) {
   return { id: account.id, name: account.name, kind: account.kind, parentId: account.category?.parentId ?? null, archived: account.archived ?? false };
 }
 
@@ -269,7 +270,7 @@ type TextInput = { description?: string | undefined; memo?: string | undefined }
 const textOf = (input: TextInput): TransactionText => ({ description: input.description ?? null, memo: input.memo ?? null });
 
 /** Validates a new or changed transaction exactly as the domain module defines it (§5, LR-01..18). */
-async function checkAgainstLedger(db: Db, context: RequestContext, tx: Transaction, chart: Chart) {
+export async function checkAgainstLedger(db: Db, context: RequestContext, tx: Transaction, chart: Chart) {
   const workspace = await getWorkspace(db, context.workspaceId);
   if (tx.refundOfId) {
     const original = tx.refundOfId === tx.id ? null : await loadTransactionRecord(db, context.workspaceId, tx.refundOfId);
@@ -278,7 +279,7 @@ async function checkAgainstLedger(db: Db, context: RequestContext, tx: Transacti
   validateTransaction(tx, chart, { today: todayIn(workspace.timezone) });
 }
 
-function audit(db: Db, context: RequestContext, type: string, transactionId: string) {
+export function audit(db: Db, context: RequestContext, type: string, transactionId: string) {
   return recordAuditEvent(db, { workspaceId: context.workspaceId, userId: context.userId, type, objectType: 'transaction', objectId: transactionId });
 }
 
@@ -307,10 +308,11 @@ export async function recordTransfer(db: Db, context: RequestContext, input: Tra
 
 /** The activity list: posted and voided transactions (voided ones stay visible, FR-19), newest first. */
 export async function listTransactions(db: Db, context: RequestContext, period: { from: string; to: string }) {
+  const locked = await lockedTransactionIds(db, context.workspaceId);
   return (await loadTransactionRecords(db, context.workspaceId))
     .filter((record) => record.tx.status !== 'trashed' && record.tx.date >= period.from && record.tx.date <= period.to)
     .sort((a, b) => (a.tx.date === b.tx.date ? (a.tx.id < b.tx.id ? 1 : -1) : a.tx.date < b.tx.date ? 1 : -1))
-    .map(transactionDto);
+    .map((record) => transactionDto(record, locked));
 }
 
 /** The trash: recoverable for 30 days, then purged (FR-19, OD-05). Most recently deleted first. */
@@ -321,7 +323,7 @@ export async function listTrash(db: Db, context: RequestContext) {
     .map((record) => ({ ...transactionDto(record), purgeAfter: addDaysToTimestamp(record.trashedAt!, TRASH_DAYS) }));
 }
 
-async function loadOrNotFound(db: Db, context: RequestContext, id: string): Promise<TransactionRecord> {
+export async function loadOrNotFound(db: Db, context: RequestContext, id: string): Promise<TransactionRecord> {
   const record = await loadTransactionRecord(db, context.workspaceId, id);
   if (!record) throw new ApiError(404, 'NOT_FOUND', 'Transaction not found');
   return record;
@@ -332,7 +334,7 @@ export async function getTransaction(db: Db, context: RequestContext, id: string
   const record = await loadOrNotFound(db, context, id);
   const versions = await listTransactionVersions(db, context.workspaceId, id);
   return {
-    ...transactionDto(record),
+    ...transactionDto(record, await lockedTransactionIds(db, context.workspaceId)),
     versions: versions.map((entry) => ({
       version: entry.version,
       changeType: entry.changeType,
@@ -443,7 +445,7 @@ export async function undo(db: Db, context: RequestContext, token: string) {
   return transactionDto({ ...updated, version: result.version });
 }
 
-function withUndo<T extends object>(dto: T, versionId: string) {
+export function withUndo<T extends object>(dto: T, versionId: string) {
   return { ...dto, undo: { token: versionId, expiresInSeconds: UNDO_SECONDS } };
 }
 
@@ -465,13 +467,17 @@ function snapshotDto(snapshot: TransactionSnapshot | { status: Transaction['stat
   return { ...rest, lines: linesDto(postings) };
 }
 
-function transactionDto(record: TransactionRecord) {
+const NONE: ReadonlySet<string> = new Set();
+
+/** `locked` holds the reconciled transactions, shown with a lock (FR-18, Stage 2 wireframe 3). */
+export function transactionDto(record: TransactionRecord, locked: ReadonlySet<string> = NONE) {
   const { tx } = record;
   return {
     id: tx.id,
     date: tx.date,
     kind: tx.kind,
     status: tx.status,
+    reconciled: locked.has(tx.id),
     version: record.version,
     origin: record.origin,
     description: record.description,

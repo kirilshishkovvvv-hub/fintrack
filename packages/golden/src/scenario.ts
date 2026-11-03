@@ -33,7 +33,18 @@ export type Op =
   /** Replaces the referenced transaction with a new intention (E-38, LR-10). */
   | { op: 'edit'; ref: string; to: TransactionOp }
   /** Lifecycle changes (§9.3). */
-  | { op: 'void' | 'trash' | 'restore'; ref: string };
+  | { op: 'void' | 'trash' | 'restore'; ref: string }
+  /**
+   * Reconciles every posted transaction of the account up to `date` against the statement
+   * (FR-18). Any difference is closed by an adjustment to ADJ, or to the named category.
+   */
+  | { op: 'reconcile'; account: string; date: string; statement: Amount; adjustTo?: 'ADJ' | string }
+  /** Quick balance update (FR-18): the actual value; a category means "I spent it" (E-37). */
+  | { op: 'balanceUpdate'; account: string; date: string; actual: Amount; category?: string }
+  /** Archives an account or category (E-58, E-59). */
+  | { op: 'archive'; name: string }
+  /** Merges one category into another of the same kind (E-59). */
+  | { op: 'merge'; from: string; into: string };
 
 export interface FlowCheck {
   from: string;

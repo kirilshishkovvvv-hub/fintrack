@@ -20,7 +20,26 @@ export interface Category {
   name: string;
   kind: 'income' | 'expense';
   parentId: string | null;
+  archived: boolean;
 }
+
+/** A finished reconciliation, with its figures as the ledger stands now (FR-18). */
+export interface Reconciliation {
+  id: string;
+  accountId: string;
+  statementDate: string;
+  status: 'completed' | 'broken' | 'superseded';
+  adjustmentTransactionId: string | null;
+  completedAt: string;
+  unlockedAt: string | null;
+  transactionIds: string[];
+  cleared_minor: number;
+  statement_minor: number;
+  difference_minor: number;
+}
+
+/** Accounts and categories that can still receive postings (LR-14): archived ones leave the pickers. */
+export const active = <T extends { archived: boolean }>(items: T[]) => items.filter((item) => !item.archived);
 
 export interface TransactionLine {
   ledgerAccountId: string;
@@ -33,6 +52,8 @@ export interface Transaction {
   date: string;
   kind: string;
   status: 'posted' | 'voided' | 'trashed';
+  /** In a completed reconciliation, and so locked (FR-18). */
+  reconciled: boolean;
   version: number;
   description: string | null;
   memo: string | null;

@@ -22,6 +22,8 @@ import type pg from 'pg';
 import { ZodError, type z } from 'zod';
 import { SESSION_ABSOLUTE_SECONDS, type Auth } from './auth.ts';
 import { ApiError, json, problem, readJson, readOptionalJson, requestHash, requiredVersion } from './http.ts';
+import * as catalog from './catalog.ts';
+import * as reconciliation from './reconciliation.ts';
 import * as schemas from './schemas.ts';
 import * as services from './services.ts';
 
@@ -87,12 +89,10 @@ export function createApp(deps: AppDependencies) {
     };
   }
 
-  /** A transaction action with no body: void, restore (Idem). */
+  /** An action on an existing object, with no body (void, restore, unlock, archive): Idem, 200. */
+  const ACTION = { status: 200, optionalBody: true };
   const statusAction = (action: 'void' | 'restore') =>
-    idempotentWrite(schemas.emptyBody, (db, context, _input, call) => services.changeStatus(db, context, call.params.id!, action), {
-      status: 200,
-      optionalBody: true,
-    });
+    idempotentWrite(schemas.emptyBody, (db, context, _input, call) => services.changeStatus(db, context, call.params.id!, action), ACTION);
 
   const routes: Route[] = [
     {
@@ -165,6 +165,50 @@ export function createApp(deps: AppDependencies) {
         status: 200,
         optionalBody: true,
       }),
+    },
+    {
+      method: 'POST',
+      pattern: /^\/api\/v1\/reconciliations\/preview$/,
+      handler: async (call) => {
+        const input = schemas.reconciliationPreviewBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => reconciliation.previewReconciliation(db, context, input)));
+      },
+    },
+    { method: 'POST', pattern: /^\/api\/v1\/reconciliations$/, handler: idempotentWrite(schemas.reconciliationBody, reconciliation.completeReconciliation) },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/reconciliations$/,
+      handler: async (call) => {
+        const query = schemas.reconciliationsQuery.parse(Object.fromEntries(call.url.searchParams));
+        return json(200, { items: await inWorkspace(call.userId, (db, context) => reconciliation.listReconciliationsDto(db, context, query.accountId)) });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/reconciliations/${UUID}/unlock$`),
+      handler: idempotentWrite(schemas.emptyBody, (db, context, _input, call) => reconciliation.unlock(db, context, call.params.id!), ACTION),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/accounts/${UUID}/balance-update$`),
+      handler: idempotentWrite(schemas.balanceUpdateBody, (db, context, input, call) => reconciliation.updateBalance(db, context, call.params.id!, input), { status: 200 }),
+    },
+    ...(['archive', 'unarchive'] as const).flatMap((action): Route[] => [
+      {
+        method: 'POST',
+        pattern: new RegExp(`^/api/v1/accounts/${UUID}/${action}$`),
+        handler: idempotentWrite(schemas.emptyBody, (db, context, _input, call) => catalog.setAccountArchived(db, context, call.params.id!, action === 'archive'), ACTION),
+      },
+      {
+        method: 'POST',
+        pattern: new RegExp(`^/api/v1/categories/${UUID}/${action}$`),
+        handler: idempotentWrite(schemas.emptyBody, (db, context, _input, call) => catalog.setCategoryArchived(db, context, call.params.id!, action === 'archive'), ACTION),
+      },
+    ]),
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/categories/${UUID}/merge$`),
+      handler: idempotentWrite(schemas.mergeCategoryBody, (db, context, input, call) => catalog.mergeCategories(db, context, call.params.id!, input.intoId), { status: 200 }),
     },
     {
       method: 'GET',
@@ -246,6 +290,10 @@ function toResponse(error: unknown, report?: (error: unknown, reference: string)
   if (error instanceof IdempotencyConflict) return problem(new ApiError(422, 'IDEMPOTENCY_KEY_REUSED', error.message));
   if (error instanceof VersionConflict) return problem(new ApiError(409, 'VERSION_CONFLICT', error.message));
   const code = (error as { code?: string } | null)?.code;
+  // Raised by the database lock on reconciled transactions (migration 0005).
+  if (code === 'FTL01') {
+    return problem(new ApiError(409, 'LOCKED_RECONCILED', 'This transaction is reconciled. Unlock its reconciliation to change it'));
+  }
   if (code === '23514') return problem(new ApiError(422, 'LEDGER_RULE', 'The database rejected the change because it breaks a rule'));
   if (code === '23503') return problem(new ApiError(422, 'INVALID_REFERENCE', 'A referenced item does not exist'));
   if (code === '23505') return problem(new ApiError(409, 'CONFLICT', 'That already exists'));

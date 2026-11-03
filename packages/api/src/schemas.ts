@@ -93,6 +93,34 @@ export const editTransactionBody = z.discriminatedUnion('kind', [
 
 export const emptyBody = z.strictObject({});
 
+const signedOrZeroMinor = z.number().int().min(-MAX_ABS_CENTS).max(MAX_ABS_CENTS);
+
+/** The statement and the items the user ticked (FR-18). The server works out every figure. */
+export const reconciliationPreviewBody = z.strictObject({
+  accountId: id,
+  statementDate: isoDate,
+  /** As the statement shows it: the balance for assets, the amount owed for cards and loans. */
+  statementBalance_minor: signedOrZeroMinor,
+  transactionIds: z.array(id).max(5000),
+});
+
+export const reconciliationBody = reconciliationPreviewBody.extend({
+  /** How to close a remaining difference: ADJ by default, or a category the user chose (E-36, E-37). */
+  adjustment: z.strictObject({ categoryId: id.optional() }).optional(),
+});
+
+/** Quick balance update for cash, investments and other assets (FR-18). */
+export const balanceUpdateBody = z.strictObject({
+  date: isoDate,
+  actual_minor: signedOrZeroMinor,
+  /** "I spent it": the difference becomes spending in this category (E-37). */
+  categoryId: id.optional(),
+});
+
+export const mergeCategoryBody = z.strictObject({ intoId: id });
+
+export const reconciliationsQuery = z.strictObject({ accountId: id.optional() });
+
 export const periodQuery = z.strictObject({ from: isoDate, to: isoDate }).refine((p) => p.from <= p.to, 'from must not be after to');
 
 export const summaryQuery = z.strictObject({ at: isoDate.optional() });

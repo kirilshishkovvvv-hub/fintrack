@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
@@ -89,7 +90,10 @@ export default function TransactionDetailPage() {
   const categories = new Map(data.categories.map((category) => [category.id, category]));
   const ownNames = tx.lines.filter((line) => accounts.has(line.ledgerAccountId)).map((line) => accounts.get(line.ledgerAccountId)!.name);
   const categoryNames = tx.lines.filter((line) => categories.has(line.ledgerAccountId)).map((line) => categories.get(line.ledgerAccountId)!.name);
-  const shape = editShape(tx, accounts, categories);
+  // A reconciled transaction is locked: nothing is offered until its reconciliation is unlocked (FR-18).
+  const shape = tx.reconciled ? null : editShape(tx, accounts, categories);
+  const changeable = tx.status === 'posted' && !tx.reconciled;
+  const ownAccountId = tx.lines.find((line) => accounts.has(line.ledgerAccountId))?.ledgerAccountId;
   const title = tx.description ?? categoryNames[0] ?? tKinds(tx.kind);
   const when = (iso: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 
@@ -145,7 +149,7 @@ export default function TransactionDetailPage() {
   const categoryOptions =
     shape && shape.kind !== 'transfer'
       ? data.categories
-          .filter((category) => category.kind === shape.kind)
+          .filter((category) => category.kind === shape.kind && !category.archived)
           .map((category) => {
             const parent = category.parentId ? categories.get(category.parentId) : undefined;
             return (
@@ -187,6 +191,13 @@ export default function TransactionDetailPage() {
         )}
         {tx.status === 'voided' && <p className="notice notice-warning small">{t('voidedNote')}</p>}
         {tx.status === 'trashed' && <p className="notice notice-warning small">{t('trashedNote')}</p>}
+        {tx.reconciled && (
+          <p className="notice notice-info small">
+            <span aria-hidden="true">🔒 </span>
+            {t('reconciledNote')}{' '}
+            {ownAccountId && <Link href={`/accounts/${ownAccountId}`}>{t('openAccount')}</Link>}
+          </p>
+        )}
       </section>
 
       {error && (
@@ -252,12 +263,12 @@ export default function TransactionDetailPage() {
         </form>
       ) : (
         <section className="card actions" aria-label={t('actions')}>
-          {tx.status === 'posted' && shape && (
+          {changeable && shape && (
             <button className="btn btn-primary" type="button" onClick={() => setEditing(true)} disabled={busy}>
               {t('edit')}
             </button>
           )}
-          {tx.status === 'posted' && (
+          {changeable && (
             <>
               <button className="btn" type="button" onClick={() => void voidTx()} disabled={busy}>
                 {t('void')}
@@ -272,7 +283,7 @@ export default function TransactionDetailPage() {
               {t('restore')}
             </button>
           )}
-          {tx.status === 'posted' && !shape && <p className="small muted">{t('editLater')}</p>}
+          {changeable && !shape && <p className="small muted">{t('editLater')}</p>}
         </section>
       )}
 

@@ -42,7 +42,16 @@ export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: 
   return data as T;
 }
 
-const TRANSLATED_CODES = new Set(['INVALID_REFERENCE', 'VALIDATION_FAILED', 'VERSION_CONFLICT', 'INVALID_STATE', 'NOT_EDITABLE']);
+const TRANSLATED_CODES = new Set([
+  'INVALID_REFERENCE',
+  'VALIDATION_FAILED',
+  'VERSION_CONFLICT',
+  'INVALID_STATE',
+  'NOT_EDITABLE',
+  'LOCKED_RECONCILED',
+  'RECONCILIATION_DIFFERENCE',
+  'ARCHIVE_BLOCKED',
+]);
 
 /** The user-facing message for a failed change, from the problem's stable code (Stage 2 §9.1). */
 export function errorMessage(problem: unknown, tErrors: (key: string) => string): string {
