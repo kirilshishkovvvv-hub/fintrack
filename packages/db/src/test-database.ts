@@ -1,0 +1,70 @@
+/**
+ * A throwaway PostgreSQL cluster for tests and local development (no system install).
+ * Each call starts a fresh cluster in a temporary directory, on a free port, and
+ * applies all migrations. The password is random and never leaves this process.
+ */
+import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import EmbeddedPostgres from 'embedded-postgres';
+import pg from 'pg';
+import { migrate } from './migrate.ts';
+
+export interface TestDatabase {
+  pool: pg.Pool;
+  stop(): Promise<void>;
+}
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      server.close(() => (typeof address === 'object' && address ? resolve(address.port) : reject(new Error('no port'))));
+    });
+  });
+}
+
+export async function startTestDatabase(): Promise<TestDatabase> {
+  const databaseDir = await mkdtemp(path.join(tmpdir(), 'fintrack-pg-'));
+  const port = await freePort();
+  const password = randomBytes(18).toString('base64url');
+  const cluster = new EmbeddedPostgres({
+    databaseDir,
+    port,
+    user: 'postgres',
+    password,
+    persistent: false,
+    onLog: () => undefined,
+    onError: () => undefined,
+  });
+  await cluster.initialise();
+  await cluster.start();
+  await cluster.createDatabase('fintrack_test');
+
+  const pool = new pg.Pool({
+    host: '127.0.0.1',
+    port,
+    user: 'postgres',
+    password,
+    database: 'fintrack_test',
+    max: 10,
+  });
+  const client = await pool.connect();
+  try {
+    await migrate(client);
+  } finally {
+    client.release();
+  }
+
+  return {
+    pool,
+    async stop() {
+      await pool.end();
+      await cluster.stop();
+      await rm(databaseDir, { recursive: true, force: true }).catch(() => undefined);
+    },
+  };
+}
