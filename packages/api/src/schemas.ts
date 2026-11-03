@@ -85,6 +85,14 @@ export const createTransferBody = z.strictObject({
   ...meta,
 });
 
+/** An edit sends the full new intention (Stage 2 §9.2), including a transfer's. */
+export const editTransactionBody = z.discriminatedUnion('kind', [
+  ...createTransactionBody.options,
+  createTransferBody.extend({ kind: z.literal('transfer') }),
+]);
+
+export const emptyBody = z.strictObject({});
+
 export const periodQuery = z.strictObject({ from: isoDate, to: isoDate }).refine((p) => p.from <= p.to, 'from must not be after to');
 
 export const summaryQuery = z.strictObject({ at: isoDate.optional() });

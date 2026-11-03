@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { AppShell } from '@/components/AppShell';
-import { api, ApiProblem, newIdempotencyKey } from '@/lib/api';
+import { useUndo } from '@/components/UndoToast';
+import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { parseUserAmount } from '@/lib/money';
-import { loadAccounts, loadCategories, todayLocal, useApiData, type Category } from '@/lib/use-api';
+import { loadAccounts, loadCategories, todayLocal, useApiData, type Category, type Transaction } from '@/lib/use-api';
 
 type Kind = 'expense' | 'income' | 'transfer';
 
@@ -21,6 +22,7 @@ export default function NewTransactionPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const key = useRef(newIdempotencyKey());
+  const offerUndo = useUndo();
   const { data } = useApiData(async () => ({ accounts: await loadAccounts(), categories: await loadCategories() }));
 
   if (!data) {
@@ -56,22 +58,20 @@ export default function NewTransactionPage() {
     setBusy(true);
     setError(null);
     try {
-      if (kind === 'transfer') {
-        await api('POST', '/api/v1/transfers', {
-          idempotencyKey: key.current,
-          body: { date, fromAccountId: form.get('from'), toAccountId: form.get('to'), amount_minor: amount, description },
-        });
-      } else {
-        await api('POST', '/api/v1/transactions', {
-          idempotencyKey: key.current,
-          body: { kind, date, accountId: form.get('account'), lines: [{ categoryId: form.get('category'), amount_minor: amount }], description },
-        });
-      }
+      const created =
+        kind === 'transfer'
+          ? await api<Transaction>('POST', '/api/v1/transfers', {
+              idempotencyKey: key.current,
+              body: { date, fromAccountId: form.get('from'), toAccountId: form.get('to'), amount_minor: amount, description },
+            })
+          : await api<Transaction>('POST', '/api/v1/transactions', {
+              idempotencyKey: key.current,
+              body: { kind, date, accountId: form.get('account'), lines: [{ categoryId: form.get('category'), amount_minor: amount }], description },
+            });
+      offerUndo(t('saved'), created.undo);
       router.replace('/dashboard');
     } catch (problem) {
-      const code = problem instanceof ApiProblem ? problem.code : '';
-      const isFuture = problem instanceof ApiProblem && JSON.stringify(problem.details ?? '').includes('future');
-      setError(isFuture ? tErrors('futureDate') : code === 'INVALID_REFERENCE' ? tErrors('INVALID_REFERENCE') : tErrors(code === 'VALIDATION_FAILED' ? 'VALIDATION_FAILED' : 'LEDGER_RULE'));
+      setError(errorMessage(problem, tErrors));
       setBusy(false);
     }
   }

@@ -15,17 +15,27 @@ import {
   type Transaction,
 } from '@fintrack/domain';
 import {
+  changeTransactionStatus,
   createWorkspace,
+  findUndoableVersion,
   getWorkspace,
   insertLedgerAccount,
   insertTransaction,
+  listTransactionVersions,
   loadChart,
+  loadTransactionRecord,
+  loadTransactionRecords,
   loadTransactions,
   recordAuditEvent,
+  replaceTransaction,
   uuidv7,
+  VersionConflict,
   workspaceIdsForUser,
   type Db,
   type RequestContext,
+  type TransactionRecord,
+  type TransactionSnapshot,
+  type TransactionText,
   type WorkspaceRow,
 } from '@fintrack/db';
 import type { z } from 'zod';
@@ -36,6 +46,7 @@ import type {
   createTransactionBody,
   createTransferBody,
   createWorkspaceBody,
+  editTransactionBody,
 } from './schemas.ts';
 import { DEFAULT_CATEGORIES } from './seed.ts';
 
@@ -199,9 +210,19 @@ function categoryDto(account: LedgerAccount) {
 
 type TransactionInput = z.infer<typeof createTransactionBody>;
 type TransferInput = z.infer<typeof createTransferBody>;
+type EditInput = z.infer<typeof editTransactionBody>;
 
-function buildFromIntention(chart: Chart, id: string, input: TransactionInput): Transaction {
+/** The undo toast stays for 10 seconds (GAP-4); the server allows a few more for the network. */
+export const UNDO_SECONDS = 10;
+const UNDO_GRACE_SECONDS = 5;
+
+/** Opening balances, adjustments and valuations change through their own flows, not an edit. */
+const SYSTEM_KINDS: ReadonlySet<Transaction['kind']> = new Set(['opening_balance', 'adjustment', 'valuation']);
+
+function buildFromIntention(chart: Chart, id: string, input: EditInput): Transaction {
   switch (input.kind) {
+    case 'transfer':
+      return buildTransfer(id, input);
     case 'expense':
     case 'income': {
       const lines = input.lines.map((line) => ({
@@ -239,21 +260,39 @@ function buildFromIntention(chart: Chart, id: string, input: TransactionInput): 
   }
 }
 
-async function record(db: Db, context: RequestContext, tx: Transaction, chart: Chart, meta: { description?: string | undefined; memo?: string | undefined }) {
+function buildTransfer(id: string, input: TransferInput): Transaction {
+  const base = { id, date: input.date, fromId: input.fromAccountId, toId: input.toAccountId, amount: input.amount_minor };
+  return input.fee ? build.transfer({ ...base, fee: { categoryId: input.fee.categoryId, amount: input.fee.amount_minor } }) : build.transfer(base);
+}
+
+type TextInput = { description?: string | undefined; memo?: string | undefined };
+const textOf = (input: TextInput): TransactionText => ({ description: input.description ?? null, memo: input.memo ?? null });
+
+/** Validates a new or changed transaction exactly as the domain module defines it (§5, LR-01..18). */
+async function checkAgainstLedger(db: Db, context: RequestContext, tx: Transaction, chart: Chart) {
   const workspace = await getWorkspace(db, context.workspaceId);
   if (tx.refundOfId) {
-    const original = (await loadTransactions(db, context.workspaceId)).find((candidate) => candidate.id === tx.refundOfId);
+    const original = tx.refundOfId === tx.id ? null : await loadTransactionRecord(db, context.workspaceId, tx.refundOfId);
     if (!original) throw new ApiError(422, 'INVALID_REFERENCE', 'The original transaction does not exist');
   }
   validateTransaction(tx, chart, { today: todayIn(workspace.timezone) });
-  await insertTransaction(db, context.workspaceId, tx, {
+}
+
+function audit(db: Db, context: RequestContext, type: string, transactionId: string) {
+  return recordAuditEvent(db, { workspaceId: context.workspaceId, userId: context.userId, type, objectType: 'transaction', objectId: transactionId });
+}
+
+async function record(db: Db, context: RequestContext, tx: Transaction, chart: Chart, input: TextInput) {
+  await checkAgainstLedger(db, context, tx, chart);
+  const text = textOf(input);
+  const { versionId } = await insertTransaction(db, context.workspaceId, tx, {
     origin: 'manual',
     userId: context.userId,
-    ...(meta.description ? { description: meta.description } : {}),
-    ...(meta.memo ? { memo: meta.memo } : {}),
+    ...(text.description ? { description: text.description } : {}),
+    ...(text.memo ? { memo: text.memo } : {}),
   });
-  await recordAuditEvent(db, { workspaceId: context.workspaceId, userId: context.userId, type: 'transaction.created', objectType: 'transaction', objectId: tx.id });
-  return transactionDto(tx);
+  await audit(db, context, 'transaction.created', tx.id);
+  return withUndo(transactionDto({ tx, origin: 'manual', version: 1, trashedAt: null, ...text }), versionId);
 }
 
 export async function recordTransaction(db: Db, context: RequestContext, input: TransactionInput) {
@@ -263,36 +302,183 @@ export async function recordTransaction(db: Db, context: RequestContext, input: 
 
 export async function recordTransfer(db: Db, context: RequestContext, input: TransferInput) {
   const chart = await loadChart(db, context.workspaceId);
-  const base = { id: uuidv7(), date: input.date, fromId: input.fromAccountId, toId: input.toAccountId, amount: input.amount_minor };
-  const tx = input.fee ? build.transfer({ ...base, fee: { categoryId: input.fee.categoryId, amount: input.fee.amount_minor } }) : build.transfer(base);
-  return record(db, context, tx, chart, input);
+  return record(db, context, buildTransfer(uuidv7(), input), chart, input);
 }
 
+/** The activity list: posted and voided transactions (voided ones stay visible, FR-19), newest first. */
 export async function listTransactions(db: Db, context: RequestContext, period: { from: string; to: string }) {
-  return (await loadTransactions(db, context.workspaceId))
-    .filter((tx) => tx.date >= period.from && tx.date <= period.to)
-    .sort((a, b) => (a.date === b.date ? (a.id < b.id ? 1 : -1) : a.date < b.date ? 1 : -1))
+  return (await loadTransactionRecords(db, context.workspaceId))
+    .filter((record) => record.tx.status !== 'trashed' && record.tx.date >= period.from && record.tx.date <= period.to)
+    .sort((a, b) => (a.tx.date === b.tx.date ? (a.tx.id < b.tx.id ? 1 : -1) : a.tx.date < b.tx.date ? 1 : -1))
     .map(transactionDto);
 }
 
-export async function getTransaction(db: Db, context: RequestContext, id: string) {
-  const tx = (await loadTransactions(db, context.workspaceId)).find((candidate) => candidate.id === id);
-  if (!tx) throw new ApiError(404, 'NOT_FOUND', 'Transaction not found');
-  return transactionDto(tx);
+/** The trash: recoverable for 30 days, then purged (FR-19, OD-05). Most recently deleted first. */
+export async function listTrash(db: Db, context: RequestContext) {
+  return (await loadTransactionRecords(db, context.workspaceId))
+    .filter((record) => record.tx.status === 'trashed')
+    .sort((a, b) => (a.trashedAt! < b.trashedAt! ? 1 : -1))
+    .map((record) => ({ ...transactionDto(record), purgeAfter: addDaysToTimestamp(record.trashedAt!, TRASH_DAYS) }));
 }
 
-function transactionDto(tx: Transaction) {
+async function loadOrNotFound(db: Db, context: RequestContext, id: string): Promise<TransactionRecord> {
+  const record = await loadTransactionRecord(db, context.workspaceId, id);
+  if (!record) throw new ApiError(404, 'NOT_FOUND', 'Transaction not found');
+  return record;
+}
+
+/** Detail with lines and the full version history (Stage 2 §9.2, FR-19). */
+export async function getTransaction(db: Db, context: RequestContext, id: string) {
+  const record = await loadOrNotFound(db, context, id);
+  const versions = await listTransactionVersions(db, context.workspaceId, id);
+  return {
+    ...transactionDto(record),
+    versions: versions.map((entry) => ({
+      version: entry.version,
+      changeType: entry.changeType,
+      changedAt: entry.changedAt,
+      before: snapshotDto(entry.before),
+      after: snapshotDto(entry.after),
+    })),
+  };
+}
+
+/** Replaces a posted transaction with a new intention (E-38, LR-10). */
+export async function editTransaction(db: Db, context: RequestContext, id: string, expectedVersion: number, input: EditInput) {
+  const existing = await loadOrNotFound(db, context, id);
+  if (existing.version !== expectedVersion) throw new VersionConflict('The transaction was changed since you opened it');
+  if (existing.tx.status !== 'posted') throw new ApiError(409, 'INVALID_STATE', 'Restore the transaction before editing it');
+  if (SYSTEM_KINDS.has(existing.tx.kind)) {
+    throw new ApiError(422, 'NOT_EDITABLE', 'Opening balances and adjustments are changed from the account, not edited here');
+  }
+  const chart = await loadChart(db, context.workspaceId);
+  const tx = buildFromIntention(chart, id, input);
+  await checkAgainstLedger(db, context, tx, chart);
+  const text = textOf(input);
+  const result = await replaceTransaction(db, context.workspaceId, tx, { ...text, expectedVersion, userId: context.userId });
+  await audit(db, context, 'transaction.edited', id);
+  return withUndo(transactionDto({ ...existing, ...text, tx, version: result.version }), result.versionId);
+}
+
+const TRANSITIONS = {
+  void: { from: ['posted'], to: 'voided', event: 'transaction.voided' },
+  trash: { from: ['posted'], to: 'trashed', event: 'transaction.trashed' },
+  restore: { from: ['voided', 'trashed'], to: 'posted', event: 'transaction.restored' },
+} as const satisfies Record<string, { from: readonly Transaction['status'][]; to: Transaction['status']; event: string }>;
+
+const TRASH_DAYS = 30;
+
+/** Void, trash or restore (§9.3). Restoring re-checks the ledger rules, e.g. an archived account (LR-14). */
+export async function changeStatus(
+  db: Db,
+  context: RequestContext,
+  id: string,
+  action: keyof typeof TRANSITIONS,
+  expectedVersion?: number,
+) {
+  const existing = await loadOrNotFound(db, context, id);
+  if (expectedVersion !== undefined && existing.version !== expectedVersion) {
+    throw new VersionConflict('The transaction was changed since you opened it');
+  }
+  const transition = TRANSITIONS[action];
+  if (!(transition.from as readonly string[]).includes(existing.tx.status)) {
+    throw new ApiError(409, 'INVALID_STATE', `A ${existing.tx.status} transaction can't be changed that way`);
+  }
+  if (action === 'restore') {
+    if (existing.trashedAt && Date.now() - Date.parse(existing.trashedAt) > TRASH_DAYS * 86_400_000) {
+      throw new ApiError(409, 'INVALID_STATE', 'This transaction has been in the trash for more than 30 days');
+    }
+    await checkAgainstLedger(db, context, { ...existing.tx, status: 'posted' }, await loadChart(db, context.workspaceId));
+  }
+  const result = await changeTransactionStatus(db, context.workspaceId, id, {
+    to: transition.to,
+    type: action,
+    expectedVersion: existing.version,
+    userId: context.userId,
+  });
+  await audit(db, context, transition.event, id);
+  const tx = { ...existing.tx, status: transition.to };
+  const trashedAt = transition.to === 'trashed' ? new Date().toISOString() : null;
+  return withUndo(transactionDto({ ...existing, tx, version: result.version, trashedAt }), result.versionId);
+}
+
+/**
+ * Reverts the action an undo token names (GAP-4, §9.7): a create goes to the trash, an edit
+ * returns to its previous version, and a status change is reversed. The undo itself is a new
+ * version, so the history shows both. Only the latest change, by the same user, within the window.
+ */
+export async function undo(db: Db, context: RequestContext, token: string) {
+  const entry = await findUndoableVersion(db, context.workspaceId, {
+    versionId: token,
+    userId: context.userId,
+    windowSeconds: UNDO_SECONDS + UNDO_GRACE_SECONDS,
+  });
+  if (!entry) throw new ApiError(409, 'UNDO_EXPIRED', 'This can no longer be undone. Use the history or the trash');
+  const existing = await loadOrNotFound(db, context, entry.transactionId);
+
+  let result;
+  let updated: TransactionRecord;
+  if (entry.changeType === 'edit' && entry.before && 'postings' in entry.before) {
+    const before = entry.before;
+    const tx: Transaction = { id: existing.tx.id, date: before.date, kind: before.kind, status: 'posted', postings: before.postings };
+    if (before.refundOfId) tx.refundOfId = before.refundOfId;
+    await checkAgainstLedger(db, context, tx, await loadChart(db, context.workspaceId));
+    const text = { description: before.description, memo: before.memo };
+    result = await replaceTransaction(db, context.workspaceId, tx, { ...text, expectedVersion: existing.version, userId: context.userId });
+    updated = { ...existing, ...text, tx };
+  } else if (entry.changeType === 'create' || entry.changeType === 'void' || entry.changeType === 'trash' || entry.changeType === 'restore') {
+    const to: Transaction['status'] = entry.changeType === 'create' ? 'trashed' : (entry.before as { status: Transaction['status'] }).status;
+    if (to === 'posted') await checkAgainstLedger(db, context, { ...existing.tx, status: 'posted' }, await loadChart(db, context.workspaceId));
+    result = await changeTransactionStatus(db, context.workspaceId, existing.tx.id, {
+      to,
+      type: to === 'posted' ? 'restore' : to === 'voided' ? 'void' : 'trash',
+      expectedVersion: existing.version,
+      userId: context.userId,
+    });
+    updated = { ...existing, tx: { ...existing.tx, status: to }, trashedAt: to === 'trashed' ? new Date().toISOString() : null };
+  } else {
+    throw new ApiError(409, 'UNDO_EXPIRED', 'This change cannot be undone');
+  }
+  await audit(db, context, 'transaction.undone', existing.tx.id);
+  return transactionDto({ ...updated, version: result.version });
+}
+
+function withUndo<T extends object>(dto: T, versionId: string) {
+  return { ...dto, undo: { token: versionId, expiresInSeconds: UNDO_SECONDS } };
+}
+
+function addDaysToTimestamp(timestamp: string, days: number): string {
+  return new Date(Date.parse(timestamp) + days * 86_400_000).toISOString();
+}
+
+function linesDto(postings: Transaction['postings']) {
+  return postings.map((posting) => ({
+    ledgerAccountId: posting.ledgerAccountId,
+    amount_minor: posting.amount,
+    mark: posting.mark ?? null,
+  }));
+}
+
+function snapshotDto(snapshot: TransactionSnapshot | { status: Transaction['status'] } | null) {
+  if (!snapshot || !('postings' in snapshot)) return snapshot;
+  const { postings, ...rest } = snapshot;
+  return { ...rest, lines: linesDto(postings) };
+}
+
+function transactionDto(record: TransactionRecord) {
+  const { tx } = record;
   return {
     id: tx.id,
     date: tx.date,
     kind: tx.kind,
     status: tx.status,
+    version: record.version,
+    origin: record.origin,
+    description: record.description,
+    memo: record.memo,
     refundOfId: tx.refundOfId ?? null,
-    lines: tx.postings.map((posting) => ({
-      ledgerAccountId: posting.ledgerAccountId,
-      amount_minor: posting.amount,
-      mark: posting.mark ?? null,
-    })),
+    trashedAt: record.trashedAt,
+    lines: linesDto(tx.postings),
   };
 }
 

@@ -2,6 +2,7 @@
  * Database-level guarantees (Stage 2 §5.4, §7, §8.3), tested by trying to break them directly
  * with SQL as the application role, without going through any application code.
  */
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { build, type LedgerAccount } from '@fintrack/domain';
 import { createWorkspace, insertLedgerAccount, insertTransaction, loadChart, uuidv7, withWorkspace, type Db } from '../src/index.ts';
@@ -224,6 +225,43 @@ describe('protected history and currency (BR-23.2, LR-10, FR-19)', () => {
   test('the application role cannot delete transactions or history', async () => {
     await rejectsWith('42501', asA((db) => db.query('DELETE FROM fin.transactions WHERE id = $1', [a.expenseId])));
     await rejectsWith('42501', asA((db) => db.query('DELETE FROM fin.transaction_versions')));
+  });
+
+  test("the web server's login, a member of fin_app only, cannot become the maintenance role", async () => {
+    // SET ROLE is checked against the login (session) user. Tests log in as a superuser, so this
+    // builds the production arrangement: a login role that belongs to fin_app and nothing else.
+    const password = uuidv7();
+    await database.pool.query(`CREATE ROLE web_login_test LOGIN PASSWORD '${password}' IN ROLE fin_app`);
+    const web = new pg.Client({ ...database.connection, user: 'web_login_test', password });
+    await web.connect();
+    try {
+      await web.query('BEGIN');
+      await web.query('SET LOCAL ROLE fin_app');
+      await web.query('ROLLBACK');
+      await rejectsWith('42501', web.query('SET ROLE fin_maintenance'));
+      await rejectsWith('42501', web.query('DELETE FROM fin.transactions'));
+    } finally {
+      await web.end();
+      await database.pool.query('DROP OWNED BY web_login_test; DROP ROLE web_login_test');
+    }
+  });
+
+  test('the maintenance role can delete only trashed transactions, and read nothing else', async () => {
+    const client = await database.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE fin_maintenance');
+      const deleted = await client.query('DELETE FROM fin.transactions WHERE id = $1', [a.expenseId]);
+      expect(deleted.rowCount).toBe(0);
+      const visible = await client.query("SELECT count(*)::int AS n FROM fin.transactions WHERE status = 'posted' AND refund_of_id IS NULL");
+      expect(visible.rows[0].n).toBe(0);
+      await rejectsWith('42501', client.query('SAVEPOINT s; SELECT 1 FROM fin.postings'));
+      await client.query('ROLLBACK TO SAVEPOINT s');
+      await rejectsWith('42501', client.query("UPDATE fin.transactions SET status = 'trashed'"));
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
   });
 
   test('audit events and versions are append-only', async () => {

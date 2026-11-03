@@ -14,6 +14,11 @@ export type ProblemCode =
   | 'IDEMPOTENCY_KEY_REQUIRED'
   | 'IDEMPOTENCY_KEY_REUSED'
   | 'NO_WORKSPACE'
+  | 'VERSION_REQUIRED'
+  | 'VERSION_CONFLICT'
+  | 'INVALID_STATE'
+  | 'NOT_EDITABLE'
+  | 'UNDO_EXPIRED'
   | 'INTERNAL';
 
 export class ApiError extends Error {
@@ -52,6 +57,22 @@ export function problem(error: ApiError): Response {
     }),
     { status: error.status, headers: { 'content-type': 'application/problem+json; charset=utf-8', ...SECURITY_HEADERS } },
   );
+}
+
+/** Like readJson, but a request without a body reads as {} (for actions such as void). */
+export async function readOptionalJson(request: Request): Promise<unknown> {
+  if (!request.body || request.headers.get('content-length') === '0') return {};
+  return readJson(request);
+}
+
+/** The version named in `If-Match`, as a plain number or a quoted ETag (Stage 2 §9.1, "Ver"). */
+export function requiredVersion(request: Request): number {
+  const value = request.headers.get('if-match')?.trim().replace(/^W\//, '').replace(/^"(.*)"$/, '$1');
+  const version = Number(value);
+  if (!value || !Number.isSafeInteger(version) || version < 1) {
+    throw new ApiError(428, 'VERSION_REQUIRED', 'Send the version you are changing in an If-Match header');
+  }
+  return version;
 }
 
 export async function readJson(request: Request): Promise<unknown> {

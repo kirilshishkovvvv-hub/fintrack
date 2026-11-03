@@ -11,6 +11,7 @@ export interface Account {
   class: string;
   spendable: boolean;
   cardReserve: boolean;
+  archived: boolean;
   balance_minor: number;
 }
 
@@ -21,11 +22,49 @@ export interface Category {
   parentId: string | null;
 }
 
+export interface TransactionLine {
+  ledgerAccountId: string;
+  amount_minor: number;
+  mark?: string | null;
+}
+
 export interface Transaction {
   id: string;
   date: string;
   kind: string;
-  lines: { ledgerAccountId: string; amount_minor: number }[];
+  status: 'posted' | 'voided' | 'trashed';
+  version: number;
+  description: string | null;
+  memo: string | null;
+  trashedAt: string | null;
+  lines: TransactionLine[];
+  /** Present on the response to an action that can be undone for a few seconds (GAP-4). */
+  undo?: { token: string; expiresInSeconds: number };
+}
+
+/** A status change stores only the status; a create or edit stores the whole transaction. */
+export interface VersionSnapshot {
+  status: string;
+  kind?: string;
+  date?: string;
+  lines?: TransactionLine[];
+}
+
+export interface TransactionDetail extends Transaction {
+  versions: {
+    version: number;
+    changeType: 'create' | 'edit' | 'void' | 'restore' | 'trash' | 'unlock';
+    changedAt: string;
+    before: VersionSnapshot | null;
+    after: VersionSnapshot | null;
+  }[];
+}
+
+/** Fired after any change, so every page on screen reloads its server figures. */
+const DATA_CHANGED = 'fintrack:data-changed';
+
+export function notifyDataChanged(): void {
+  window.dispatchEvent(new Event(DATA_CHANGED));
 }
 
 export interface Summary {
@@ -59,6 +98,9 @@ export function useApiData<T>(load: () => Promise<T>) {
 
   useEffect(() => {
     void reload();
+    const onChange = () => void reload();
+    window.addEventListener(DATA_CHANGED, onChange);
+    return () => window.removeEventListener(DATA_CHANGED, onChange);
   }, [reload]);
 
   return { data, failed, reload };

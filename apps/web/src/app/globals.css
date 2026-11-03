@@ -122,5 +122,20 @@ input[type='text'], input[type='email'], input[type='password'], input[type='dat
 .bottom-nav .nav-icon { font-size: 1.2rem; line-height: 1; }
 .nav-add .nav-icon { background: var(--brand); color: var(--on-brand); width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; }
 
+.row-link { color: inherit; text-decoration: none; }
+.row-link:hover .row-title { text-decoration: underline; }
+.row-voided .amount, .row-voided .row-title { text-decoration: line-through; color: var(--text-muted); }
+.badge { display: inline-block; margin-left: 0.5rem; padding: 0 0.45rem; border-radius: 999px; background: var(--warning-tint); color: var(--warning); font-size: 0.75rem; font-weight: 600; text-decoration: none; vertical-align: middle; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.btn-danger { color: var(--danger); }
+.history { list-style: none; margin: 0; padding: 0; }
+.history li { padding: 0.5rem 0; border-top: 1px solid var(--border); }
+.history li:first-child { border-top: 0; }
+
+.toast-region { position: fixed; left: 0; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); display: flex; justify-content: center; padding: 0 1rem; pointer-events: none; z-index: 20; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 0.75rem; max-width: 480px; width: 100%; background: var(--text); color: var(--bg); border-radius: var(--radius); padding: 0.5rem 0.5rem 0.5rem 1rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
+.toast > span { flex: 1; }
+.toast-action { background: transparent; color: var(--bg); border-color: var(--bg); min-height: 40px; padding: 0.4rem 0.8rem; }
+
 .footer-note { font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-top: 1.5rem; }
 details summary { cursor: pointer; color: var(--brand-strong); font-weight: 500; margin-top: 0.5rem; }

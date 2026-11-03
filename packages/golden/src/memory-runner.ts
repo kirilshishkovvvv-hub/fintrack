@@ -15,7 +15,13 @@ import {
   type LedgerAccount,
   type Transaction,
 } from '@fintrack/domain';
-import type { Line, Op, Scenario } from './scenario.ts';
+import type { Line, Op, Scenario, TransactionOp } from './scenario.ts';
+
+/** What happened to the book, in order, so other harnesses can replay it through their own layer. */
+export type BookEvent =
+  | { type: 'insert'; tx: Transaction }
+  | { type: 'replace'; tx: Transaction }
+  | { type: 'status'; id: string; status: Transaction['status'] };
 
 /** The latest date any scenario uses; transactions are validated against it as "today". */
 const VALIDATION_TODAY = '2026-12-31';
@@ -64,6 +70,7 @@ const BASELINES: Record<Scenario['base'], Op[]> = {
 export class MemoryBook {
   readonly chart = new Chart();
   readonly transactions: Transaction[] = [];
+  readonly events: BookEvent[] = [];
   private readonly refs = new Map<string, string>();
   private sequence = 0;
 
@@ -83,14 +90,47 @@ export class MemoryBook {
   }
 
   apply(op: Op): void {
-    if (op.op === 'account') {
-      this.openAccount(op);
-      return;
+    switch (op.op) {
+      case 'account':
+        this.openAccount(op);
+        return;
+      case 'edit': {
+        const index = this.indexOf(op.ref);
+        if (this.transactions[index]!.status !== 'posted') throw new Error(`${op.ref} is not posted and can't be edited`);
+        const tx = this.buildTransaction(op.to, this.transactions[index]!.id);
+        validateTransaction(tx, this.chart, { today: VALIDATION_TODAY });
+        this.transactions[index] = tx;
+        this.events.push({ type: 'replace', tx });
+        return;
+      }
+      case 'void':
+      case 'trash':
+      case 'restore': {
+        const index = this.indexOf(op.ref);
+        const tx = this.transactions[index]!;
+        const allowed = op.op === 'restore' ? tx.status !== 'posted' : tx.status === 'posted';
+        if (!allowed) throw new Error(`Can't ${op.op} ${op.ref} while it is ${tx.status}`);
+        const status = op.op === 'restore' ? 'posted' : op.op === 'void' ? 'voided' : 'trashed';
+        if (status === 'posted') validateTransaction({ ...tx, status }, this.chart, { today: VALIDATION_TODAY });
+        this.transactions[index] = { ...tx, status };
+        this.events.push({ type: 'status', id: tx.id, status });
+        return;
+      }
+      default: {
+        const tx = this.buildTransaction(op);
+        validateTransaction(tx, this.chart, { today: VALIDATION_TODAY });
+        this.transactions.push(tx);
+        this.events.push({ type: 'insert', tx });
+        if (op.ref) this.refs.set(op.ref, tx.id);
+      }
     }
-    const tx = this.buildTransaction(op);
-    validateTransaction(tx, this.chart, { today: VALIDATION_TODAY });
-    this.transactions.push(tx);
-    if (op.ref) this.refs.set(op.ref, tx.id);
+  }
+
+  private indexOf(ref: string): number {
+    const id = this.refs.get(ref);
+    const index = this.transactions.findIndex((tx) => tx.id === id);
+    if (index < 0) throw new Error(`No transaction named ${ref}`);
+    return index;
   }
 
   private openAccount(op: Extract<Op, { op: 'account' }>): void {
@@ -117,11 +157,11 @@ export class MemoryBook {
     if (opening) {
       validateTransaction(opening, this.chart, { today: VALIDATION_TODAY });
       this.transactions.push(opening);
+      this.events.push({ type: 'insert', tx: opening });
     }
   }
 
-  private buildTransaction(op: Exclude<Op, { op: 'account' }>): Transaction {
-    const id = this.nextId();
+  private buildTransaction(op: TransactionOp, id = this.nextId()): Transaction {
     switch (op.op) {
       case 'expense':
         return build.expense({ id, date: op.date, accountId: op.account, lines: categoryLines(op.lines) });

@@ -74,35 +74,72 @@ export async function insertLedgerAccount(
   }
 }
 
+export type TransactionOrigin = 'manual' | 'import' | 'occurrence' | 'system';
+
+/** Descriptive fields kept beside the postings; they never affect a figure. */
+export interface TransactionText {
+  description: string | null;
+  memo: string | null;
+}
+
+/** What a version entry stores as its "before" and "after" values (LR-10, AC-19.2). */
+export interface TransactionSnapshot extends TransactionText {
+  date: string;
+  kind: Transaction['kind'];
+  status: Transaction['status'];
+  refundOfId: string | null;
+  postings: Transaction['postings'];
+}
+
+export function snapshotOf(tx: Transaction, text: TransactionText): TransactionSnapshot {
+  return {
+    date: tx.date,
+    kind: tx.kind,
+    status: tx.status,
+    refundOfId: tx.refundOfId ?? null,
+    postings: tx.postings,
+    description: text.description,
+    memo: text.memo,
+  };
+}
+
 /** Saves a validated transaction with its postings and a "create" version (LR-03, LR-10). */
 export async function insertTransaction(
   db: Db,
   workspaceId: string,
   tx: Transaction,
-  meta: { origin: 'manual' | 'import' | 'occurrence' | 'system'; userId: string; description?: string; memo?: string },
-): Promise<void> {
-  const currency = await workspaceCurrency(db, workspaceId);
+  meta: { origin: TransactionOrigin; userId: string; description?: string; memo?: string },
+): Promise<{ versionId: string }> {
+  const text = { description: meta.description ?? null, memo: meta.memo ?? null };
   await db.query(
     `INSERT INTO fin.transactions (id, workspace_id, txn_date, kind, status, origin, refund_of_id, description, memo,
                                    created_by, updated_by)
      VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8, $9, $9)`,
-    [tx.id, workspaceId, tx.date, tx.kind, meta.origin, tx.refundOfId ?? null, meta.description ?? null, meta.memo ?? null, meta.userId],
+    [tx.id, workspaceId, tx.date, tx.kind, meta.origin, tx.refundOfId ?? null, text.description, text.memo, meta.userId],
   );
+  await insertPostings(db, workspaceId, tx);
+  const versionId = uuidv7();
+  await db.query(
+    `INSERT INTO fin.transaction_versions (id, workspace_id, transaction_id, version, change_type, after, changed_by)
+     VALUES ($1, $2, $3, 1, 'create', $4, $5)`,
+    [versionId, workspaceId, tx.id, JSON.stringify(snapshotOf(tx, text)), meta.userId],
+  );
+  return { versionId };
+}
+
+/** Writes a transaction's postings in line order. Balancing is checked at commit (LR-01). */
+export async function insertPostings(db: Db, workspaceId: string, tx: Transaction): Promise<void> {
+  const currency = await workspaceCurrency(db, workspaceId);
   let lineNo = 0;
   for (const posting of tx.postings) {
     lineNo += 1;
     await db.query(
       `INSERT INTO fin.postings (id, workspace_id, transaction_id, txn_date, txn_status, ledger_account_id,
                                  amount_minor, currency, line_no, mark)
-       VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8, $9)`,
-      [uuidv7(), workspaceId, tx.id, tx.date, posting.ledgerAccountId, posting.amount, currency, lineNo, posting.mark ?? null],
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [uuidv7(), workspaceId, tx.id, tx.date, tx.status, posting.ledgerAccountId, posting.amount, currency, lineNo, posting.mark ?? null],
     );
   }
-  await db.query(
-    `INSERT INTO fin.transaction_versions (id, workspace_id, transaction_id, version, change_type, after, changed_by)
-     VALUES ($1, $2, $3, 1, 'create', $4, $5)`,
-    [uuidv7(), workspaceId, tx.id, JSON.stringify(tx), meta.userId],
-  );
 }
 
 interface LedgerAccountRow {
@@ -160,31 +197,55 @@ interface PostingRow {
   kind: Transaction['kind'];
   status: Transaction['status'];
   refund_of_id: string | null;
+  origin: TransactionOrigin;
+  description: string | null;
+  memo: string | null;
+  version: number;
+  trashed_at: string | null;
   ledger_account_id: string;
   amount_minor: string;
   mark: 'discount' | 'deduction' | null;
 }
 
-/** Loads every transaction of the workspace with its postings, in line order. */
-export async function loadTransactions(db: Db, workspaceId: string): Promise<Transaction[]> {
+/** A transaction as stored: the domain transaction plus its text, origin and version. */
+export interface TransactionRecord extends TransactionText {
+  tx: Transaction;
+  origin: TransactionOrigin;
+  version: number;
+  trashedAt: string | null;
+}
+
+/** Loads every transaction of the workspace with its postings in line order, optionally only one. */
+export async function loadTransactionRecords(db: Db, workspaceId: string, onlyId?: string): Promise<TransactionRecord[]> {
   const result = await db.query<PostingRow>(`
     SELECT t.id AS transaction_id, to_char(t.txn_date, 'YYYY-MM-DD') AS txn_date, t.kind, t.status, t.refund_of_id,
+           t.origin, t.description, t.memo, t.version, t.trashed_at::text,
            p.ledger_account_id, p.amount_minor::text, p.mark
       FROM fin.transactions t
       JOIN fin.postings p ON p.transaction_id = t.id
-     WHERE t.workspace_id = $1 AND p.workspace_id = $1
-     ORDER BY t.txn_date, t.id, p.line_no`, [workspaceId]);
-  const byId = new Map<string, Transaction>();
+     WHERE t.workspace_id = $1 AND p.workspace_id = $1 AND ($2::uuid IS NULL OR t.id = $2)
+     ORDER BY t.txn_date, t.id, p.line_no`, [workspaceId, onlyId ?? null]);
+  const byId = new Map<string, TransactionRecord>();
   for (const row of result.rows) {
-    let tx = byId.get(row.transaction_id);
-    if (!tx) {
-      tx = { id: row.transaction_id, date: row.txn_date, kind: row.kind, status: row.status, postings: [] };
+    let record = byId.get(row.transaction_id);
+    if (!record) {
+      const tx: Transaction = { id: row.transaction_id, date: row.txn_date, kind: row.kind, status: row.status, postings: [] };
       if (row.refund_of_id) tx.refundOfId = row.refund_of_id;
-      byId.set(row.transaction_id, tx);
+      record = { tx, origin: row.origin, description: row.description, memo: row.memo, version: row.version, trashedAt: row.trashed_at };
+      byId.set(row.transaction_id, record);
     }
     const amount = Number(row.amount_minor);
     if (!Number.isSafeInteger(amount)) throw new Error(`Unsafe amount in posting: ${row.amount_minor}`);
-    tx.postings.push(row.mark ? { ledgerAccountId: row.ledger_account_id, amount, mark: row.mark } : { ledgerAccountId: row.ledger_account_id, amount });
+    record.tx.postings.push(row.mark ? { ledgerAccountId: row.ledger_account_id, amount, mark: row.mark } : { ledgerAccountId: row.ledger_account_id, amount });
   }
   return [...byId.values()];
+}
+
+/** Loads every transaction of the workspace with its postings, in line order. */
+export async function loadTransactions(db: Db, workspaceId: string): Promise<Transaction[]> {
+  return (await loadTransactionRecords(db, workspaceId)).map((record) => record.tx);
+}
+
+export async function loadTransactionRecord(db: Db, workspaceId: string, id: string): Promise<TransactionRecord | null> {
+  return (await loadTransactionRecords(db, workspaceId, id))[0] ?? null;
 }

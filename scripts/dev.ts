@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { migrate } from '../packages/db/src/migrate.ts';
+import { NO_IO_WORKERS } from '../packages/db/src/test-database.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dataRoot = path.join(root, '.pgdata');
@@ -39,6 +40,7 @@ const cluster = new EmbeddedPostgres({
   user: 'postgres',
   password: secrets.dbPassword,
   persistent: true,
+  postgresFlags: NO_IO_WORKERS,
   onLog: () => undefined,
   onError: (message) => console.error(`[dev] postgres: ${String(message).trim()}`),
 });

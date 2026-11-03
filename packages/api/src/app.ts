@@ -6,11 +6,22 @@
  * validate → run the use case in one database transaction with row-level security.
  */
 import { LedgerError } from '@fintrack/domain';
-import { idempotent, IdempotencyConflict, uuidv7, withUser, withWorkspace, workspaceIdsForUser, getWorkspace, type Db, type RequestContext } from '@fintrack/db';
+import {
+  getWorkspace,
+  idempotent,
+  IdempotencyConflict,
+  uuidv7,
+  VersionConflict,
+  withUser,
+  withWorkspace,
+  workspaceIdsForUser,
+  type Db,
+  type RequestContext,
+} from '@fintrack/db';
 import type pg from 'pg';
 import { ZodError, type z } from 'zod';
 import { SESSION_ABSOLUTE_SECONDS, type Auth } from './auth.ts';
-import { ApiError, json, problem, readJson, requestHash } from './http.ts';
+import { ApiError, json, problem, readJson, readOptionalJson, requestHash, requiredVersion } from './http.ts';
 import * as schemas from './schemas.ts';
 import * as services from './services.ts';
 
@@ -33,7 +44,7 @@ interface Call {
 type Handler = (call: Call) => Promise<Response>;
 
 interface Route {
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   pattern: RegExp;
   handler: Handler;
 }
@@ -50,27 +61,38 @@ export function createApp(deps: AppDependencies) {
   }
 
   /** A state-changing call with a required Idempotency-Key (Stage 2 §7.5). */
-  function idempotentCreate<S extends z.ZodType>(schema: S, run: (db: Db, context: RequestContext, input: z.infer<S>) => Promise<unknown>): Handler {
+  function idempotentWrite<S extends z.ZodType>(
+    schema: S,
+    run: (db: Db, context: RequestContext, input: z.infer<S>, call: Call) => Promise<unknown>,
+    options: { status?: number; optionalBody?: boolean } = {},
+  ): Handler {
     return async (call) => {
       const key = call.request.headers.get('idempotency-key');
       if (!key || key.length < 8 || key.length > 200) {
         throw new ApiError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Send an Idempotency-Key header of 8 to 200 characters');
       }
-      const body = await readJson(call.request);
+      const body = options.optionalBody ? await readOptionalJson(call.request) : await readJson(call.request);
       const input = schema.parse(body);
       const hash = await requestHash(call.request.method, call.url.pathname, body);
       const result = await inWorkspace(
         call.userId,
         (db, context) =>
           idempotent(db, { userId: context.userId, workspaceId: context.workspaceId, key, requestHash: hash }, async () => ({
-            status: 201,
-            body: await run(db, context, input),
+            status: options.status ?? 201,
+            body: await run(db, context, input, call),
           })),
         true,
       );
       return json(result.status, result.body, result.replayed ? { 'idempotent-replayed': 'true' } : {});
     };
   }
+
+  /** A transaction action with no body: void, restore (Idem). */
+  const statusAction = (action: 'void' | 'restore') =>
+    idempotentWrite(schemas.emptyBody, (db, context, _input, call) => services.changeStatus(db, context, call.params.id!, action), {
+      status: 200,
+      optionalBody: true,
+    });
 
   const routes: Route[] = [
     {
@@ -94,13 +116,13 @@ export function createApp(deps: AppDependencies) {
       pattern: /^\/api\/v1\/accounts$/,
       handler: async (call) => json(200, { items: await inWorkspace(call.userId, services.listAccounts) }),
     },
-    { method: 'POST', pattern: /^\/api\/v1\/accounts$/, handler: idempotentCreate(schemas.createAccountBody, services.createAccount) },
+    { method: 'POST', pattern: /^\/api\/v1\/accounts$/, handler: idempotentWrite(schemas.createAccountBody, services.createAccount) },
     {
       method: 'GET',
       pattern: /^\/api\/v1\/categories$/,
       handler: async (call) => json(200, { items: await inWorkspace(call.userId, services.listCategories) }),
     },
-    { method: 'POST', pattern: /^\/api\/v1\/categories$/, handler: idempotentCreate(schemas.createCategoryBody, services.createCategory) },
+    { method: 'POST', pattern: /^\/api\/v1\/categories$/, handler: idempotentWrite(schemas.createCategoryBody, services.createCategory) },
     {
       method: 'GET',
       pattern: /^\/api\/v1\/transactions$/,
@@ -114,8 +136,41 @@ export function createApp(deps: AppDependencies) {
       pattern: new RegExp(`^/api/v1/transactions/${UUID}$`),
       handler: async (call) => json(200, await inWorkspace(call.userId, (db, context) => services.getTransaction(db, context, call.params.id!))),
     },
-    { method: 'POST', pattern: /^\/api\/v1\/transactions$/, handler: idempotentCreate(schemas.createTransactionBody, services.recordTransaction) },
-    { method: 'POST', pattern: /^\/api\/v1\/transfers$/, handler: idempotentCreate(schemas.createTransferBody, services.recordTransfer) },
+    {
+      method: 'PATCH',
+      pattern: new RegExp(`^/api/v1/transactions/${UUID}$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.editTransactionBody.parse(await readJson(call.request));
+        const result = await inWorkspace(call.userId, (db, context) => services.editTransaction(db, context, call.params.id!, version, input), true);
+        return json(200, result);
+      },
+    },
+    {
+      method: 'DELETE',
+      pattern: new RegExp(`^/api/v1/transactions/${UUID}$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        return json(200, await inWorkspace(call.userId, (db, context) => services.changeStatus(db, context, call.params.id!, 'trash', version), true));
+      },
+    },
+    { method: 'POST', pattern: new RegExp(`^/api/v1/transactions/${UUID}/void$`), handler: statusAction('void') },
+    { method: 'POST', pattern: new RegExp(`^/api/v1/transactions/${UUID}/restore$`), handler: statusAction('restore') },
+    { method: 'POST', pattern: /^\/api\/v1\/transactions$/, handler: idempotentWrite(schemas.createTransactionBody, services.recordTransaction) },
+    { method: 'POST', pattern: /^\/api\/v1\/transfers$/, handler: idempotentWrite(schemas.createTransferBody, services.recordTransfer) },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/undo/${UUID}$`),
+      handler: idempotentWrite(schemas.emptyBody, (db, context, _input, call) => services.undo(db, context, call.params.id!), {
+        status: 200,
+        optionalBody: true,
+      }),
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/trash$/,
+      handler: async (call) => json(200, { items: await inWorkspace(call.userId, services.listTrash) }),
+    },
     {
       method: 'GET',
       pattern: /^\/api\/v1\/summary$/,
@@ -126,8 +181,13 @@ export function createApp(deps: AppDependencies) {
     },
   ];
 
-  async function authenticate(request: Request): Promise<string> {
-    const result = await deps.auth.api.getSession({ headers: request.headers });
+  /**
+   * The signed-in, verified user. `refreshed` holds the cookies Better Auth sets when it slides
+   * the 30-minute idle expiry forward (AD-14); they must reach the browser, or its cookie would
+   * still expire 30 minutes after sign-in, however active the user is.
+   */
+  async function authenticate(request: Request): Promise<{ userId: string; refreshed: string[] }> {
+    const { headers, response: result } = await deps.auth.api.getSession({ headers: request.headers, returnHeaders: true });
     if (!result) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue');
     // AC-01.1: an unverified account can't read or write any financial data.
     if (!result.user.emailVerified) throw new ApiError(401, 'UNAUTHENTICATED', 'Verify your email address first');
@@ -137,7 +197,7 @@ export function createApp(deps: AppDependencies) {
       await deps.auth.api.revokeSession({ headers: request.headers, body: { token: result.session.token } }).catch(() => undefined);
       throw new ApiError(401, 'UNAUTHENTICATED', 'Your session has ended. Sign in again');
     }
-    return result.user.id;
+    return { userId: result.user.id, refreshed: headers.getSetCookie() };
   }
 
   async function dispatch(request: Request, url: URL): Promise<Response> {
@@ -150,10 +210,18 @@ export function createApp(deps: AppDependencies) {
     if (request.method !== 'GET' && request.headers.get('origin') !== deps.allowedOrigin) {
       throw new ApiError(403, 'FORBIDDEN_ORIGIN', 'Requests must come from the app');
     }
-    const userId = await authenticate(request);
+    const { userId, refreshed } = await authenticate(request);
     const match = route.pattern.exec(url.pathname);
     const params: Record<string, string> = match?.[1] ? { id: match[1] } : {};
-    return route.handler({ request, url, params, userId });
+    try {
+      const response = await route.handler({ request, url, params, userId });
+      for (const cookie of refreshed) response.headers.append('set-cookie', cookie);
+      return response;
+    } catch (error) {
+      const response = toResponse(error, deps.reportError);
+      for (const cookie of refreshed) response.headers.append('set-cookie', cookie);
+      return response;
+    }
   }
 
   return async function handle(request: Request): Promise<Response> {
@@ -176,6 +244,7 @@ function toResponse(error: unknown, report?: (error: unknown, reference: string)
     return problem(new ApiError(422, 'LEDGER_RULE', 'The transaction breaks a ledger rule', error.violations));
   }
   if (error instanceof IdempotencyConflict) return problem(new ApiError(422, 'IDEMPOTENCY_KEY_REUSED', error.message));
+  if (error instanceof VersionConflict) return problem(new ApiError(409, 'VERSION_CONFLICT', error.message));
   const code = (error as { code?: string } | null)?.code;
   if (code === '23514') return problem(new ApiError(422, 'LEDGER_RULE', 'The database rejected the change because it breaks a rule'));
   if (code === '23503') return problem(new ApiError(422, 'INVALID_REFERENCE', 'A referenced item does not exist'));

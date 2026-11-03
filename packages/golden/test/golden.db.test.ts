@@ -6,7 +6,9 @@
 import { afterAll, beforeAll, describe, test } from 'vitest';
 import { Ledger, type LedgerAccount, type Transaction } from '@fintrack/domain';
 import {
+  changeTransactionStatus,
   createWorkspace,
+  replaceTransaction,
   insertLedgerAccount,
   insertTransaction,
   loadChart,
@@ -58,7 +60,7 @@ describe('golden scenarios (PostgreSQL round trip)', () => {
           }
 
           for (const tx of book.transactions) ids.set(tx.id, uuidv7());
-          for (const tx of book.transactions) {
+          const map = (tx: Transaction): Transaction => {
             const mapped: Transaction = {
               ...tx,
               id: ids.get(tx.id)!,
@@ -66,7 +68,34 @@ describe('golden scenarios (PostgreSQL round trip)', () => {
             };
             if (tx.refundOfId) mapped.refundOfId = ids.get(tx.refundOfId)!;
             else delete mapped.refundOfId;
-            await insertTransaction(db, context.workspaceId, mapped, { origin: 'manual', userId: context.userId });
+            return mapped;
+          };
+          // Replays the book's history through the store, so edits and lifecycle changes go
+          // through the same database paths the application uses (LR-10, §9.3).
+          const versions = new Map<string, number>();
+          const next = (id: string) => versions.get(id)!;
+          for (const event of book.events) {
+            if (event.type === 'insert') {
+              await insertTransaction(db, context.workspaceId, map(event.tx), { origin: 'manual', userId: context.userId });
+              versions.set(event.tx.id, 1);
+            } else if (event.type === 'replace') {
+              const result = await replaceTransaction(db, context.workspaceId, map(event.tx), {
+                expectedVersion: next(event.tx.id),
+                userId: context.userId,
+                description: null,
+                memo: null,
+              });
+              versions.set(event.tx.id, result.version);
+            } else {
+              const type = event.status === 'posted' ? 'restore' : event.status === 'voided' ? 'void' : 'trash';
+              const result = await changeTransactionStatus(db, context.workspaceId, ids.get(event.id)!, {
+                to: event.status,
+                type,
+                expectedVersion: next(event.id),
+                userId: context.userId,
+              });
+              versions.set(event.id, result.version);
+            }
           }
         },
         { write: true },

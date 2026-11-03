@@ -19,6 +19,12 @@ export interface TestDatabase {
   stop(): Promise<void>;
 }
 
+/**
+ * PostgreSQL 18 starts separate I/O worker processes by default. On Windows they can outlive a
+ * stopped cluster and block the next start (T-25), so local clusters use synchronous I/O.
+ */
+export const NO_IO_WORKERS = ['-c', 'io_method=sync'];
+
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -39,6 +45,7 @@ export async function startTestDatabase(): Promise<TestDatabase> {
     user: 'postgres',
     password,
     persistent: false,
+    postgresFlags: NO_IO_WORKERS,
     onLog: () => undefined,
     onError: () => undefined,
   });

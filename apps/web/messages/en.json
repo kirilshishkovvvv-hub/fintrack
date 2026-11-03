@@ -113,6 +113,8 @@
     "title": "Activity",
     "month": "Month",
     "empty": "Nothing recorded in this month",
+    "voided": "Voided",
+    "trashLink": "Recently deleted",
     "kinds": {
       "expense": "Expense",
       "income": "Income",
@@ -125,7 +127,57 @@
       "valuation": "Valuation"
     }
   },
+  "transaction": {
+    "notFound": "This transaction doesn't exist or was removed.",
+    "kind": "Type",
+    "date": "Date",
+    "accounts": "Account",
+    "category": "Category",
+    "actions": "Actions",
+    "edit": "Edit",
+    "saveChanges": "Save changes",
+    "cancel": "Cancel",
+    "void": "Void",
+    "delete": "Delete",
+    "restore": "Restore",
+    "editLater": "Editing this kind of transaction is coming in a later update. You can void or delete it and add it again.",
+    "voidedNote": "Voided: it stays in your history but doesn't count in any balance or report.",
+    "trashedNote": "Deleted: it can be restored for 30 days after it was deleted.",
+    "saved": "Changes saved",
+    "voidedToast": "Transaction voided",
+    "restoredToast": "Transaction restored",
+    "trashedToast": "Moved to Recently deleted",
+    "history": "History",
+    "status": {
+      "voided": "Voided",
+      "trashed": "Deleted"
+    },
+    "change": {
+      "create": "Created",
+      "edit": "Edited",
+      "void": "Voided",
+      "restore": "Restored",
+      "trash": "Deleted",
+      "unlock": "Unlocked"
+    }
+  },
+  "trash": {
+    "title": "Recently deleted",
+    "intro": "Deleted transactions stay here for 30 days. After that they're removed for good.",
+    "empty": "Nothing here.",
+    "restore": "Restore",
+    "restored": "Transaction restored",
+    "removedOn": "removed for good on {date}"
+  },
+  "undo": {
+    "action": "Undo ({seconds})",
+    "undone": "Undone",
+    "expired": "That can no longer be undone. Use the history or Recently deleted."
+  },
   "errors": {
+    "VERSION_CONFLICT": "This was changed somewhere else. We've reloaded it; check and try again.",
+    "INVALID_STATE": "That isn't possible in the transaction's current state.",
+    "NOT_EDITABLE": "This kind of transaction can't be edited here.",
     "invalidAmount": "Enter an amount like 12.50.",
     "required": "This field is required.",
     "LEDGER_RULE": "That can't be saved: it breaks a bookkeeping rule.",

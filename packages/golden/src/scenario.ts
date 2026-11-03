@@ -8,6 +8,16 @@ import type { AccountType } from '@fintrack/domain';
 export type Amount = string;
 export type Line = readonly [name: string, amount: Amount];
 
+/** An intention that creates a transaction. `ref` names it for later steps. */
+export type TransactionOp =
+  | { op: 'expense'; date: string; account: string; lines: Line[]; ref?: string }
+  | { op: 'income'; date: string; account: string; lines: Line[]; ref?: string }
+  | { op: 'transfer'; date: string; from: string; to: string; amount: Amount; fee?: Line; ref?: string }
+  | { op: 'refund'; date: string; account: string; lines: Line[]; of?: string; ref?: string }
+  | { op: 'debtPayment'; date: string; from: string; to: string; principal: Amount; extras?: Line[]; ref?: string }
+  /** General split with signed amounts: positive = debit. */
+  | { op: 'split'; date: string; lines: Line[]; ref?: string };
+
 export type Op =
   | {
       op: 'account';
@@ -19,13 +29,11 @@ export type Op =
       spendable?: boolean;
       cardReserve?: boolean;
     }
-  | { op: 'expense'; date: string; account: string; lines: Line[]; ref?: string }
-  | { op: 'income'; date: string; account: string; lines: Line[]; ref?: string }
-  | { op: 'transfer'; date: string; from: string; to: string; amount: Amount; fee?: Line; ref?: string }
-  | { op: 'refund'; date: string; account: string; lines: Line[]; of?: string; ref?: string }
-  | { op: 'debtPayment'; date: string; from: string; to: string; principal: Amount; extras?: Line[]; ref?: string }
-  /** General split with signed amounts: positive = debit. */
-  | { op: 'split'; date: string; lines: Line[]; ref?: string };
+  | TransactionOp
+  /** Replaces the referenced transaction with a new intention (E-38, LR-10). */
+  | { op: 'edit'; ref: string; to: TransactionOp }
+  /** Lifecycle changes (§9.3). */
+  | { op: 'void' | 'trash' | 'restore'; ref: string };
 
 export interface FlowCheck {
   from: string;

@@ -15,12 +15,57 @@ The running record of implementation work: what was built, what was verified, an
 | Consent records at sign-up: terms, privacy notice, 18+ (never pre-ticked), optional marketing (Annex L items 6 and 17) | ✅ Done, tested |
 | Screens: sign-up, email verification, sign-in, onboarding (EUR or USD), dashboard, add account, add transaction, activity list | ✅ Done, checked in the browser |
 | Local development: `npm run dev:all` starts a local database and the web app; security emails print to the server log | ✅ Done |
-| Edit, void, trash and undo with versions; reconciliation; archive and merge; export; audit view | ⏳ Next |
+| Edit, void, delete to trash, restore and undo, with a version history per transaction; 30-day trash purge | ✅ Done, tested, checked in the browser |
+| Reconciliation; archive and merge; export; audit view | ⏳ Next |
 | "Keep me signed in", per-account login slowdown, account deletion | ⏳ Next |
 | CSV import (moved here from Stage 7, AP-15) | ⏳ After the above |
 | End-to-end browser tests (Playwright) | ⏳ Next |
 
-**Test run (3 Nov 2026):** 116 passed, 9 todo, 0 failed. Both type checks clean.
+**Test run (3 Nov 2026, evening):** 148 passed, 11 todo, 0 failed. Both type checks clean.
+
+### Added on 3 Nov 2026: edit, void, trash, restore and undo
+
+- **What the user can do:** open any transaction from the activity list, then:
+  - **edit** it (amount, account, category, date, description);
+  - **void** it (it stays visible, struck through, and counts nowhere);
+  - **delete** it (to "Recently deleted" for 30 days);
+  - **restore** it.
+
+  Each action shows an **Undo** button for 10 seconds (GAP-4). Every transaction has a history listing who changed what and when; for edits it shows old → new amount and date.
+- **Golden scenarios, in memory and through PostgreSQL** (29 in all, 7 of them new):
+  - GT-43: the date moves to 1 Apr, so March has 0 and April has 50 (Food 20.0 %);
+  - E-38: an amount edit changes only the difference, and a change of account moves the expense from assets to liabilities;
+  - GT-44: voiding, then restoring, gives back exactly the same figures;
+  - AC-19.1: delete then restore gives identical balances;
+  - E-39: a deleted transaction counts nowhere.
+
+  The database run now replays each scenario's history through the same edit and status functions the app uses.
+- **API tests (15 new):**
+  - an edit records the old and new values (AC-19.2), and can even change an expense into a transfer;
+  - a missing version answers 428 and a stale one 409, and nothing changes;
+  - an edit that breaks a rule (future date, before the opening date) leaves the transaction untouched;
+  - opening balances can't be edited here, and a voided transaction can't be edited until it's restored;
+  - a repeated void with the same key is answered once;
+  - undo:
+    - undoing a create moves it to the trash;
+    - undoing an edit restores the previous version;
+    - undoing a delete restores it;
+    - only the latest change can be undone, only once, and only within the window;
+  - purging after 30 days removes the transaction and its history, but keeps audit events with IDs only. A refund of a purged purchase keeps its amount and loses only the link (GAP-2);
+  - another user gets 404 on every action, and can't use someone else's undo token.
+- **Database tests (2 new):**
+  - the maintenance role can delete only trashed transactions and can read nothing else;
+  - a web-server login that belongs only to `fin_app` can't switch to the maintenance role.
+- **A bug found in the browser and fixed:** the 30-minute idle session behaved as a 30-minute absolute one, because the refreshed session cookie never reached the browser. It now does. A test covers it, and it fails without the fix.
+- **Waiting for Stage 5:** a voided or deleted transaction that completed a planned bill sends the bill back to Planned (GT-44 occurrence part, GAP-1), because planned items don't exist yet. These are listed as "todo" in the test run.
+
+### Checked in the browser (3 Nov 2026, evening)
+
+1. Edit "45,60" → "54,60" → the detail shows −€54.60, the history says "Edited · −€45.60 → −€54.60", and an Undo button appears.
+2. Delete → it leaves the activity list → Undo → it's back, without reloading the page.
+3. Void → balance back to €1,000.00; the row stays, struck through and labelled "Voided" → Restore.
+4. Delete → "Recently deleted" shows it with its removal date (30 days later) → Restore → Safe to Spend €954.40 again.
+5. At 360 px wide, no horizontal scrolling on the detail and edit screens, and every control has a label.
 
 ### Checked in the browser (3 Nov 2026)
 
@@ -44,7 +89,13 @@ At 360 px wide there's no horizontal scrolling on the dashboard or the add-trans
 | T-22 | **Next.js telemetry switched off** in development | Nothing leaves the machine (AD-21). | — |
 | T-23 | **Sign-up consents** are checked before Better Auth does anything, and stored after the user is created; document versions are `draft-2026-11` until the lawyer-reviewed texts exist | So a refusal reveals nothing about existing emails (AC-01.2), and every consent records which text was accepted. | Easy |
 | T-24 | **Amount entry** accepts "12.50", "12,50", "1,234.56", "1.234,56" and "1 234,56"; when both separators appear, the last one is the decimal | People type both styles; anything ambiguous is rejected, never guessed. | Easy |
-| T-25 | **Known issue:** embedded PostgreSQL on Windows can leave orphaned worker processes after a test or dev run, which blocks the next dev start | Development only. The dev script now reports it clearly; a cleanup step will follow. | — |
+| T-25 | **Resolved:** embedded PostgreSQL 18 on Windows left orphaned I/O worker processes after a test or dev run, which blocked the next dev start | Local clusters now use synchronous I/O (`io_method=sync`), so those processes never start. Development and tests only; production is Render's managed PostgreSQL. | — |
+| T-26 | **Edits remove the old postings and write new ones** in the same database transaction, under the workspace lock, with the version checked. Version entries store the full before and after transaction for edits, and only the status for void, delete and restore | LR-10 and AC-19.2, with the history readable on its own. | — |
+| T-27 | **Undo token = the ID of the version entry** the action wrote. It works only for the same user, only while that change is still the latest, and for 10 seconds plus 5 seconds' allowance for the network. Undoing a create moves the transaction to the trash instead of erasing it | GAP-4. Nothing is ever erased by an undo, and the undo itself appears in the history. | Easy |
+| T-28 | **Not editable through the edit form or `PATCH`:** opening balances, adjustments and valuations. They change through the account and reconciliation flows. The edit screen handles one-category expenses and income and plain transfers; other shapes (splits, fees) can be voided or deleted and re-entered for now | Keeps those system postings tied to their own rules (LR-05). Editing splits in the UI comes later. | Easy |
+| T-29 | **Purging uses a separate role, `fin_maintenance`** (migration 0004). Row-level security limits it to trashed transactions, the refunds that point at them, expired idempotency records and new audit events. The purge function exists and is tested; its schedule comes with the background worker (Stage 8). **Production login roles:** the web server's login belongs only to `fin_app`, the worker's only to `fin_maintenance`, and migrations run as the owner | The application role still can't delete anything (Stage 2 §6.3). A test proves the web login can't switch roles. | Moderate |
+| T-30 | **Session refresh cookies are passed on in every API response** | Fixes T-10: without it, the 30-minute idle limit acted as an absolute limit (found in the browser). | — |
+| T-31 | **Lifecycle rules as written in §9.3:** only a posted transaction can be edited, voided or deleted; voided and deleted ones can only be restored. Restoring re-checks the ledger rules (for example an archived account, LR-14), and a deleted transaction older than 30 days can't be restored | Follows the approved lifecycle table exactly. | — |
 
 ---
 

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { AppShell } from '@/components/AppShell';
 import { TransactionRow } from '@/components/TransactionRow';
@@ -18,14 +19,17 @@ export default function TransactionsPage() {
   const tApp = useTranslations('app');
   const [month, setMonth] = useState(currentMonth().from.slice(0, 7));
   const [items, setItems] = useState<Transaction[] | null>(null);
+  // Read by the loader, which also runs again after any change elsewhere on the page.
+  const shownMonth = useRef(month);
   const { data } = useApiData(async () => {
     const [summary, accounts, categories] = await Promise.all([loadSummary(), loadAccounts(), loadCategories()]);
-    const range = monthRange(month);
+    const range = monthRange(shownMonth.current);
     setItems((await api<{ items: Transaction[] }>('GET', `/api/v1/transactions?from=${range.from}&to=${range.to}`)).items);
     return { currency: summary.currency, accounts, categories };
   });
 
   async function changeMonth(value: string) {
+    shownMonth.current = value;
     setMonth(value);
     setItems(null);
     const range = monthRange(value);
@@ -51,6 +55,9 @@ export default function TransactionsPage() {
           items.map((tx) => <TransactionRow key={tx.id} tx={tx} accounts={accounts} categories={categories} currency={data.currency} />)
         )}
       </section>
+      <Link href="/trash" className="small">
+        {t('trashLink')}
+      </Link>
     </AppShell>
   );
 }
