@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { api, ApiProblem } from '@/lib/api';
+import { TwoFactorCode } from '@/components/TwoFactorCode';
+import { ApiProblem } from '@/lib/api';
+import { signInWithPassword } from '@/lib/auth';
 import { cancelledByUser, passkeysSupported, signInWithPasskey } from '@/lib/passkeys';
 
 function SignInForm() {
@@ -14,6 +16,7 @@ function SignInForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [canUsePasskey, setCanUsePasskey] = useState(false);
+  const [needsCode, setNeedsCode] = useState(false);
   useEffect(() => setCanUsePasskey(passkeysSupported()), []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -22,10 +25,12 @@ function SignInForm() {
     setBusy(true);
     setError(null);
     try {
-      await api('POST', '/api/auth/sign-in/email', {
-        body: { email: String(form.get('email') ?? '').trim(), password: String(form.get('password') ?? ''), rememberMe: form.get('keep') === 'on', callbackURL: '/sign-in?verified=1' },
-      });
-      router.replace('/dashboard');
+      if (await signInWithPassword(String(form.get('email') ?? '').trim(), String(form.get('password') ?? ''), form.get('keep') === 'on')) {
+        setNeedsCode(true);
+        setBusy(false);
+      } else {
+        router.replace('/dashboard');
+      }
     } catch (problem) {
       const status = problem instanceof ApiProblem ? problem.status : 0;
       setError(status === 403 ? t('unverified') : status === 429 ? t('tooMany') : t('invalid'));
@@ -43,6 +48,15 @@ function SignInForm() {
       if (!cancelledByUser(problem)) setError(problem instanceof ApiProblem && problem.status === 429 ? t('tooMany') : t('passkeyFailed'));
       setBusy(false);
     }
+  }
+
+  if (needsCode) {
+    return (
+      <div className="card">
+        <h1>{t('title')}</h1>
+        <TwoFactorCode onDone={() => router.replace('/dashboard')} />
+      </div>
+    );
   }
 
   return (
@@ -79,7 +93,10 @@ function SignInForm() {
           {t('passkey')}
         </button>
       )}
-      <p className="small muted" style={{ marginTop: '1rem' }}>
+      <p className="small" style={{ marginTop: '1rem', marginBottom: 0 }}>
+        <Link href="/forgot-password">{t('forgot')}</Link>
+      </p>
+      <p className="small muted" style={{ marginTop: '0.5rem' }}>
         {t('noAccount')} <Link href="/sign-up">{t('createAccount')}</Link>
       </p>
     </div>

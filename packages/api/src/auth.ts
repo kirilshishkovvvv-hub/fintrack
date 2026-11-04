@@ -33,7 +33,17 @@ export const FRESH_SESSION_SECONDS = 10 * 60;
 
 export interface OutgoingEmail {
   to: string;
-  kind: 'verify-email' | 'reset-password' | 'deletion-requested' | 'passkey-added' | 'passkey-removed';
+  kind:
+    | 'verify-email'
+    | 'reset-password'
+    | 'deletion-requested'
+    | 'passkey-added'
+    | 'passkey-removed'
+    | 'password-changed'
+    | 'email-change-requested'
+    | 'two-factor-enabled'
+    | 'two-factor-disabled'
+    | 'new-device-sign-in';
   url: string;
 }
 
@@ -61,6 +71,36 @@ function readConsents(body: unknown): SignUpConsents | null {
   };
 }
 
+export type SecurityEvent =
+  | 'auth.login'
+  | 'auth.login_failed'
+  | 'auth.passkey_added'
+  | 'auth.passkey_removed'
+  | 'auth.password_changed'
+  | 'auth.email_change_requested'
+  | 'auth.sessions_revoked'
+  | 'auth.2fa_enabled'
+  | 'auth.2fa_disabled';
+
+/** BR-01.5: changes to how someone gets in need a sign-in within the last 10 minutes. */
+const FRESH_PATHS: ReadonlySet<string> = new Set(['/change-password', '/change-email', '/two-factor/enable', '/two-factor/disable', '/passkey/delete-passkey']);
+const TWO_FACTOR_SIGN_IN_PATHS: ReadonlySet<string> = new Set(['/two-factor/verify-totp', '/two-factor/verify-backup-code']);
+
+/** A change that gets an audit entry and an email notice, so a stolen session can't make it quietly. */
+const NOTIFIED_CHANGES: Readonly<Record<string, { event: SecurityEvent; email?: OutgoingEmail['kind'] }>> = {
+  '/change-password': { event: 'auth.password_changed', email: 'password-changed' },
+  '/change-email': { event: 'auth.email_change_requested', email: 'email-change-requested' },
+  '/revoke-sessions': { event: 'auth.sessions_revoked' },
+  '/two-factor/disable': { event: 'auth.2fa_disabled', email: 'two-factor-disabled' },
+  '/passkey/verify-registration': { event: 'auth.passkey_added', email: 'passkey-added' },
+  '/passkey/delete-passkey': { event: 'auth.passkey_removed', email: 'passkey-removed' },
+};
+
+const KNOWN_DEVICE_COOKIE = 'fintrack.known_device';
+const KNOWN_DEVICE_SECONDS = 365 * 24 * 60 * 60;
+/** Right after sign-up, a first sign-in isn't news. */
+const NEW_ACCOUNT_MS = 60 * 60 * 1000;
+
 export interface AuthDependencies {
   /** A pool whose connections use `search_path=auth`. */
   pool: pg.Pool;
@@ -75,7 +115,7 @@ export interface AuthDependencies {
   /** Stores the sign-up consents of a newly created user (Annex L item 6). */
   recordConsents: (userId: string, consents: SignUpConsents) => Promise<void>;
   /** Stores sign-ins and failed sign-ins in the audit log (FR-19). */
-  recordSecurityEvent: (userId: string, type: 'auth.login' | 'auth.login_failed' | 'auth.passkey_added' | 'auth.passkey_removed') => Promise<void>;
+  recordSecurityEvent: (userId: string, type: SecurityEvent) => Promise<void>;
 }
 
 export function createAuth(deps: AuthDependencies) {
@@ -100,7 +140,13 @@ export function createAuth(deps: AuthDependencies) {
         verify: ({ hash: stored, password }) => verify(stored, password),
       },
       sendResetPassword: async ({ user, url }) => deps.sendEmail({ to: user.email, kind: 'reset-password', url }),
+      onPasswordReset: async ({ user }) => {
+        await deps.recordSecurityEvent(user.id, 'auth.password_changed');
+        await deps.sendEmail({ to: user.email, kind: 'password-changed', url: `${deps.baseURL}/sign-in` });
+      },
     },
+    // The new address confirms through the verification email (FR-01); the old one gets a notice below.
+    user: { changeEmail: { enabled: true } },
     emailVerification: {
       sendOnSignUp: true,
       expiresIn: 60 * 60,
@@ -139,13 +185,16 @@ export function createAuth(deps: AuthDependencies) {
       // (Annex L items 6 and 17). Checked before anything else, so the answer reveals nothing
       // about whether the email is registered (AC-01.2).
       before: createAuthMiddleware(async (ctx) => {
-        // BR-01.5: like adding one, removing a passkey needs a recent sign-in. Better Auth checks the adding.
-        if (ctx.path === '/passkey/delete-passkey') {
+        if (FRESH_PATHS.has(ctx.path)) {
           const session = await getSessionFromCtx(ctx);
           if (session && Date.now() - new Date(session.session.createdAt).getTime() > FRESH_SESSION_SECONDS * 1000) {
             throw new APIError('FORBIDDEN', { message: 'Confirm it is you first', code: 'REAUTH_REQUIRED' });
           }
         }
+        // BR-01.5: changing the password always ends the other sessions, whatever the request says.
+        if (ctx.path === '/change-password') return { context: { body: { ...ctx.body, revokeOtherSessions: true } } };
+        // Stage 2 §8.1: no "trusted devices" in a finance app, so 2FA is asked at every sign-in.
+        if (TWO_FACTOR_SIGN_IN_PATHS.has(ctx.path)) return { context: { body: { ...ctx.body, trustDevice: false } } };
         if (ctx.path === '/sign-up/email' && !readConsents(ctx.body)) {
           throw new APIError('BAD_REQUEST', { message: 'Accept the terms and privacy notice, and confirm you are 18 or older' });
         }
@@ -161,18 +210,46 @@ export function createAuth(deps: AuthDependencies) {
       }),
       after: createAuthMiddleware(async (ctx) => {
         const returned = ctx.context.returned;
-        if (ctx.path === '/passkey/verify-authentication' && ctx.context.newSession) {
-          await deps.recordSecurityEvent(ctx.context.newSession.user.id, 'auth.login');
-        }
-        // A new way into the account gets a record and a notice, so a stolen session can't add one quietly.
-        if ((ctx.path === '/passkey/verify-registration' || ctx.path === '/passkey/delete-passkey') && !(returned instanceof APIError)) {
-          const session = await getSessionFromCtx(ctx);
-          if (session) {
-            const added = ctx.path === '/passkey/verify-registration';
-            await deps.recordSecurityEvent(session.user.id, added ? 'auth.passkey_added' : 'auth.passkey_removed');
-            await deps.sendEmail({ to: session.user.email, kind: added ? 'passkey-added' : 'passkey-removed', url: `${deps.baseURL}/settings/passkeys` });
+        const failed = returned instanceof APIError;
+
+        /** A completed sign-in: recorded, and announced by email from a browser we haven't seen (BR-01.6). */
+        const signedIn = async (user: { id: string; email: string; createdAt: Date }) => {
+          await deps.recordSecurityEvent(user.id, 'auth.login');
+          const known = await ctx.getSignedCookie(KNOWN_DEVICE_COOKIE, deps.secret);
+          if (known !== user.id && Date.now() - new Date(user.createdAt).getTime() > NEW_ACCOUNT_MS) {
+            await deps.sendEmail({ to: user.email, kind: 'new-device-sign-in', url: `${deps.baseURL}/settings/security` });
+          }
+          await ctx.setSignedCookie(KNOWN_DEVICE_COOKIE, user.id, deps.secret, {
+            maxAge: KNOWN_DEVICE_SECONDS,
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: deps.secureCookies,
+            path: '/',
+          });
+        };
+
+        if (ctx.path === '/passkey/verify-authentication' && ctx.context.newSession) await signedIn(ctx.context.newSession.user);
+
+        if (TWO_FACTOR_SIGN_IN_PATHS.has(ctx.path) && !failed && ctx.context.newSession) {
+          const user = ctx.context.newSession.user;
+          // The same route also finishes enrolment, for someone already signed in.
+          if (ctx.getCookie(ctx.context.createAuthCookie('two_factor').name)) {
+            await signedIn(user);
+          } else {
+            await deps.recordSecurityEvent(user.id, 'auth.2fa_enabled');
+            await deps.sendEmail({ to: user.email, kind: 'two-factor-enabled', url: `${deps.baseURL}/settings/security` });
           }
         }
+
+        const change = NOTIFIED_CHANGES[ctx.path];
+        if (change && !failed) {
+          const session = ctx.context.session ?? (await getSessionFromCtx(ctx));
+          if (session) {
+            await deps.recordSecurityEvent(session.user.id, change.event);
+            if (change.email) await deps.sendEmail({ to: session.user.email, kind: change.email, url: `${deps.baseURL}/settings/security` });
+          }
+        }
+
         if (ctx.path !== '/sign-in/email') return;
         const email = emailOf(ctx.body);
         if (returned instanceof APIError && returned.statusCode === 401) {
@@ -181,7 +258,9 @@ export function createAuth(deps: AuthDependencies) {
           if (user.rows[0]) await deps.recordSecurityEvent(user.rows[0].id, 'auth.login_failed');
         } else if (ctx.context.newSession) {
           await throttle.clear(email);
-          await deps.recordSecurityEvent(ctx.context.newSession.user.id, 'auth.login');
+          // With 2FA on, the sign-in isn't complete until the code is in.
+          const user = ctx.context.newSession.user as typeof ctx.context.newSession.user & { twoFactorEnabled?: boolean };
+          if (!user.twoFactorEnabled) await signedIn(user);
         }
       }),
     },
@@ -192,7 +271,13 @@ export function createAuth(deps: AuthDependencies) {
           // lasts until the browser closes and Better Auth doesn't slide the expiry (it would stop at
           // 1 day), so the row gets the absolute limit and createApp enforces the idle limit.
           before: async (session, context) => {
-            const keepSignedIn = (context?.body as { rememberMe?: unknown } | undefined)?.rememberMe === true;
+            const current = session as typeof session & { keepSignedIn?: boolean };
+            let keepSignedIn = current.keepSignedIn ?? false;
+            if (context?.path === '/sign-in/email') keepSignedIn = (context.body as { rememberMe?: unknown }).rememberMe === true;
+            // 2FA finishes a sign-in begun earlier; only the length Better Auth gave it shows the choice.
+            else if (context?.path && TWO_FACTOR_SIGN_IN_PATHS.has(context.path) && current.keepSignedIn === undefined) {
+              keepSignedIn = new Date(session.expiresAt).getTime() - Date.now() > 2 * 86_400_000;
+            }
             const expiresAt = keepSignedIn ? session.expiresAt : new Date(Date.now() + SESSION_ABSOLUTE_SECONDS * 1000);
             return { data: { ...session, expiresAt, keepSignedIn, lastActiveAt: new Date() } };
           },
