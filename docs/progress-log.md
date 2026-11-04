@@ -24,7 +24,15 @@ The running record of implementation work: what was built, what was verified, an
 | CSV import (moved here from Stage 7, AP-15) | ⏳ After the above |
 | End-to-end browser tests (Playwright) | ⏳ Next |
 
-**Test run (4 Nov 2026, evening):** 195 passed, 11 todo, 0 failed. Both type checks clean.
+**Test run (4 Nov 2026, evening):** 198 passed, 11 todo, 0 failed. Both type checks clean.
+
+### Added on 4 Nov 2026 (evening): encrypted export (your request)
+
+- The export screen now leads with a password: the file is encrypted with AES-256 (WinZip AE-2 format). The plain download stays as a clearly labelled second option, for spreadsheets.
+- The password must be at least 12 characters, is used once and is never stored.
+- **Checked:** Windows' built-in `tar` (an independent implementation) opens the file with the right password, refuses a wrong one and writes no readable data. The file contains no readable text and no checksum of the content, and each export uses a new salt.
+- **Not checked:** opening it in 7-Zip (not installed here) or in Windows Explorer and Mac's Archive Utility, so the screen says they "may not" open it. **To test on real computers before launch.**
+- **Known limit:** the ZIP standard fixes the key derivation at 1000 PBKDF2 rounds, which is low, so a weak password could be guessed by someone who has the file. That's why 12 characters is the minimum.
 
 ### Added on 4 Nov 2026 (evening): activity log, sessions, login slowdown, account deletion
 
@@ -147,6 +155,7 @@ At 360 px wide there's no horizontal scrolling on the dashboard or the add-trans
 | T-40 | **The purge sets the target workspace and uses the existing row-level security**, as `fin_maintenance` with delete rights (migration 0006). A row with no personal data stays as the audit trail's reference | No role can delete across workspaces in one statement; a test proves it. | Moderate |
 | T-41 | **Resolves T-18: `memberships.user_id` stays without a foreign key to the auth user.** The purge removes them in order, and a test checks nothing is left | Keeps the auth and financial schemas independent. | Easy |
 | T-42 | **"Your data and privacy" page** groups export, activity log and deletion; it's reached from Accounts | Makes the rights in Annex L easy to find. | Easy |
+| T-43 | **AES-256 ZIP (AE-2) written with Node's built-in crypto**, no new dependency. Encrypted is the main path and plain the labelled alternative | Your request. A user-chosen password means we can't read the file and can't recover it; exporting again is the recovery. Extends the Stage 2 §11.5 format without changing its contents. | Easy |
 | T-31 | **Lifecycle rules as written in §9.3:** only a posted transaction can be edited, voided or deleted; voided and deleted ones can only be restored. Restoring re-checks the ledger rules (for example an archived account, LR-14), and a deleted transaction older than 30 days can't be restored | Follows the approved lifecycle table exactly. | — |
 
 ---

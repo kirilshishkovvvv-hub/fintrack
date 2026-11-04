@@ -278,7 +278,8 @@ export function createApp(deps: AppDependencies) {
       pattern: /^\/api\/v1\/exports$/,
       handler: async (call) => {
         requireFresh(call);
-        const { filename, zip } = await inWorkspace(call.userId, buildExport, true, true);
+        const { password } = schemas.exportBody.parse(await readOptionalJson(call.request));
+        const { filename, zip } = await inWorkspace(call.userId, (db, context) => buildExport(db, context, password), true, true);
         return new Response(new Uint8Array(zip), {
           status: 200,
           headers: {

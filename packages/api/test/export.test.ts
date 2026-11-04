@@ -2,6 +2,7 @@
  * Data export (FR-17, Stage 2 §11.5): AC-17.1 to AC-17.3, the fresh-session rule (BR-01.5),
  * the audit event, isolation (GT-59), and opening balances staying in place (E-01).
  */
+import { createCipheriv, createHmac, pbkdf2Sync } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { inertText, toCsv } from '../src/export.ts';
@@ -163,6 +164,91 @@ describe('export my data (FR-17)', () => {
     }
     expect((await harness.handle(new Request(`${ORIGIN}/api/v1/exports`, { method: 'POST', headers: { origin: ORIGIN } }))).status).toBe(401);
     expect((await harness.handle(new Request(`${ORIGIN}/api/v1/exports`, { method: 'POST', headers: { origin: 'https://evil.example', cookie: other.client.cookie } }))).status).toBe(403);
+  });
+});
+
+describe('an encrypted export', () => {
+  const PASSWORD_FOR_FILE = 'a long file password';
+
+  /** Reads AE-2 entries by the published format, separately from the writer's code path. */
+  function decrypt(zip: Buffer, password: string): Record<string, Buffer> {
+    const end = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+    const count = zip.readUInt16LE(end + 10);
+    let at = zip.readUInt32LE(end + 16);
+    const files: Record<string, Buffer> = {};
+    for (let i = 0; i < count; i += 1) {
+      expect(zip.readUInt16LE(at + 10)).toBe(99);
+      const size = zip.readUInt32LE(at + 20);
+      const nameLength = zip.readUInt16LE(at + 28);
+      const extraLength = zip.readUInt16LE(at + 30);
+      const local = zip.readUInt32LE(at + 42);
+      const name = zip.toString('utf8', at + 46, at + 46 + nameLength);
+      const start = local + 30 + zip.readUInt16LE(local + 26) + zip.readUInt16LE(local + 28);
+      const entry = zip.subarray(start, start + size);
+      const keys = pbkdf2Sync(password, entry.subarray(0, 16), 1000, 66, 'sha1');
+      if (!keys.subarray(64, 66).equals(entry.subarray(16, 18))) throw new Error('wrong password');
+      const body = entry.subarray(18, -10);
+      expect(createHmac('sha1', keys.subarray(32, 64)).update(body).digest().subarray(0, 10).equals(entry.subarray(-10))).toBe(true);
+      const plain = Buffer.alloc(body.length);
+      for (let block = 0; block * 16 < body.length; block += 1) {
+        const counter = Buffer.alloc(16);
+        counter.writeUInt32LE(block + 1, 0);
+        const cipher = createCipheriv('aes-256-ecb', keys.subarray(0, 32), null);
+        const stream = cipher.update(counter);
+        for (let j = 0; j < 16 && block * 16 + j < body.length; j += 1) plain[block * 16 + j] = body[block * 16 + j]! ^ stream[j]!;
+      }
+      files[name] = inflateRawSync(plain);
+      at += 46 + nameLength + extraLength;
+    }
+    return files;
+  }
+
+  const encryptedExport = (client: Client, body: unknown) =>
+    harness.handle(
+      new Request(`${ORIGIN}/api/v1/exports`, {
+        method: 'POST',
+        headers: { origin: ORIGIN, cookie: client.cookie, 'x-forwarded-for': client.ip, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  test('without the password nothing can be read; with it the content is complete and intact', async () => {
+    const { client, expense } = await setUp();
+    await expense(4560, 'very private text');
+    const response = await encryptedExport(client, { password: PASSWORD_FOR_FILE });
+    expect(response.status).toBe(200);
+    const zip = Buffer.from(await response.arrayBuffer());
+    expect(zip.includes('very private text')).toBe(false);
+    expect(() => decrypt(zip, 'the wrong password here')).toThrow('wrong password');
+    const files = decrypt(zip, PASSWORD_FOR_FILE);
+    expect(Object.keys(files).sort()).toEqual(['accounts.csv', 'categories.csv', 'data.json', 'reconciliations.csv', 'transactions.csv']);
+    expect(files['transactions.csv']!.toString('utf8')).toContain('very private text');
+  });
+
+  test('two exports with the same password use different keys; the file holds no checksum of the content', async () => {
+    const { client } = await setUp();
+    const first = Buffer.from(await (await encryptedExport(client, { password: PASSWORD_FOR_FILE })).arrayBuffer());
+    const second = Buffer.from(await (await encryptedExport(client, { password: PASSWORD_FOR_FILE })).arrayBuffer());
+    const salt = (zip: Buffer) => {
+      const nameLength = zip.readUInt16LE(26);
+      return zip.subarray(30 + nameLength + zip.readUInt16LE(28), 46 + nameLength + zip.readUInt16LE(28)).toString('hex');
+    };
+    expect(salt(first)).not.toBe(salt(second));
+    expect(first.readUInt32LE(14)).toBe(0);
+  });
+
+  test('a short password is refused, and the password is stored nowhere', async () => {
+    const { client, email } = await setUp();
+    expect((await encryptedExport(client, { password: 'short' })).status).toBe(422);
+    expect((await encryptedExport(client, { password: PASSWORD_FOR_FILE })).status).toBe(200);
+    const audit = await harness.database.pool.query(
+      `SELECT e.* FROM fin.audit_events e WHERE e.event_type = 'export.created' AND e.user_id = (SELECT id FROM auth."user" WHERE email = $1)`,
+      [email],
+    );
+    expect(audit.rowCount).toBe(1);
+    expect(JSON.stringify(audit.rows)).not.toContain(PASSWORD_FOR_FILE);
+    const idempotency = await harness.database.pool.query('SELECT 1 FROM fin.idempotency_records WHERE response::text LIKE $1', [`%${PASSWORD_FOR_FILE}%`]);
+    expect(idempotency.rowCount).toBe(0);
   });
 });
 

@@ -119,6 +119,9 @@ export const balanceUpdateBody = z.strictObject({
 
 export const mergeCategoryBody = z.strictObject({ intoId: id });
 
+/** The password is used once to encrypt the file and is never stored or logged. */
+export const exportBody = z.strictObject({ password: z.string().min(12).max(128).optional() });
+
 export const auditQuery = z.strictObject({ before: id.optional() });
 
 export const reconciliationsQuery = z.strictObject({ accountId: id.optional() });

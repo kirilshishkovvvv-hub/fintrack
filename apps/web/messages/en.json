@@ -329,8 +329,19 @@
   "export": {
     "title": "Export my data",
     "intro": "Download a copy of everything you've entered: accounts, categories, transactions with their history, and reconciliations. It's a ZIP with CSV files for spreadsheets and one JSON file.",
-    "warning": "The file isn't encrypted. Keep it somewhere safe.",
-    "download": "Download my data",
+    "passwordTitle": "Protect the file with a password",
+    "passwordIntro": "The file is encrypted with AES-256 and can't be read without this password. We don't keep the password. If you forget it, just export again.",
+    "password": "File password",
+    "passwordHint": "At least 12 characters.",
+    "confirmPassword": "Repeat the password",
+    "tooShort": "Use at least 12 characters.",
+    "mismatch": "The two passwords don't match.",
+    "download": "Download encrypted file",
+    "openHint": "To open it, use an app that supports AES-256 ZIP files, such as the free 7-Zip. The tools built into Windows and Mac may not open it.",
+    "afterOpen": "Once you unpack the files they're no longer protected, so delete them when you're done. Don't send the password together with the file.",
+    "plainTitle": "Download without a password",
+    "plainIntro": "Opens anywhere, but anyone who gets the file can read your financial data.",
+    "plain": "Download without a password",
     "done": "Your download has started."
   },
   "trash": {

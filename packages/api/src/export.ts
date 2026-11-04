@@ -3,6 +3,7 @@
  * JSON file as the complete machine-readable copy. Every status is included, labelled, so the
  * voided and deleted transactions a user can still see in the app are part of their copy.
  */
+import { createCipheriv, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { crc32, deflateRawSync } from 'node:zlib';
 import { formatAmount, Ledger, todayIn, type Chart, type LedgerAccount } from '@fintrack/domain';
 import {
@@ -44,8 +45,37 @@ export function toCsv(header: readonly string[], rows: readonly Cell[][]): Buffe
   return Buffer.from(`﻿${body}\r\n`, 'utf8');
 }
 
-/** A minimal ZIP writer: deflated entries, UTF-8 names, no ZIP64 (an export is far below 4 GB). */
-export function toZip(files: readonly { name: string; data: Buffer }[], at = new Date()): Buffer {
+/**
+ * AES-256 encryption of one ZIP entry, in the WinZip AE-2 format that 7-Zip and others read:
+ * salt, password check, AES-CTR with a little-endian counter starting at 1, then 10 bytes of
+ * HMAC-SHA1 over the ciphertext. The format fixes PBKDF2 at 1000 rounds, which is low, so the
+ * API requires a long password.
+ */
+function encryptEntry(packed: Buffer, password: string): Buffer {
+  const salt = randomBytes(16);
+  const keys = pbkdf2Sync(Buffer.from(password, 'utf8'), salt, 1000, 66, 'sha1');
+  const blocks = Math.ceil(packed.length / 16);
+  const counters = Buffer.alloc(blocks * 16);
+  for (let block = 0; block < blocks; block += 1) counters.writeBigUInt64LE(BigInt(block + 1), block * 16);
+  const cipher = createCipheriv('aes-256-ecb', keys.subarray(0, 32), null);
+  cipher.setAutoPadding(false);
+  const stream = cipher.update(counters);
+  const encrypted = Buffer.from(packed.map((byte, index) => byte ^ stream[index]!));
+  const check = createHmac('sha1', keys.subarray(32, 64)).update(encrypted).digest().subarray(0, 10);
+  return Buffer.concat([salt, keys.subarray(64, 66), encrypted, check]);
+}
+
+/** The extra field that marks an AE-2 entry: AES-256 over deflated data. */
+const AES_EXTRA = Buffer.from([0x01, 0x99, 7, 0, 2, 0, 0x41, 0x45, 3, 8, 0]);
+
+/**
+ * A minimal ZIP writer: deflated entries, UTF-8 names, no ZIP64 (an export is far below 4 GB).
+ * With a password every entry is AES-256 encrypted; the file names stay readable, as ZIP requires.
+ */
+export function toZip(files: readonly { name: string; data: Buffer }[], options: { at?: Date; password?: string | undefined } = {}): Buffer {
+  const at = options.at ?? new Date();
+  const { password } = options;
+  const extra = password ? AES_EXTRA : Buffer.alloc(0);
   const time = (at.getUTCHours() << 11) | (at.getUTCMinutes() << 5) | (at.getUTCSeconds() >> 1);
   const date = ((at.getUTCFullYear() - 1980) << 9) | ((at.getUTCMonth() + 1) << 5) | at.getUTCDate();
   const locals: Buffer[] = [];
@@ -53,21 +83,24 @@ export function toZip(files: readonly { name: string; data: Buffer }[], at = new
   let offset = 0;
   for (const file of files) {
     const name = Buffer.from(file.name, 'utf8');
-    const packed = deflateRawSync(file.data);
+    const deflated = deflateRawSync(file.data);
+    const packed = password ? encryptEntry(deflated, password) : deflated;
     const shared = Buffer.alloc(26);
-    shared.writeUInt16LE(20, 0); // version needed
-    shared.writeUInt16LE(0x0800, 2); // UTF-8 names
-    shared.writeUInt16LE(8, 4); // deflate
+    shared.writeUInt16LE(password ? 51 : 20, 0); // version needed
+    shared.writeUInt16LE(password ? 0x0801 : 0x0800, 2); // UTF-8 names, encrypted
+    shared.writeUInt16LE(password ? 99 : 8, 4); // AES, or deflate
     shared.writeUInt16LE(time, 6);
     shared.writeUInt16LE(date, 8);
-    shared.writeUInt32LE(crc32(file.data), 10);
+    // AE-2 leaves the checksum empty: it would reveal something about the content.
+    shared.writeUInt32LE(password ? 0 : crc32(file.data), 10);
     shared.writeUInt32LE(packed.length, 14);
     shared.writeUInt32LE(file.data.length, 18);
     shared.writeUInt16LE(name.length, 22);
-    const local = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), shared, name, packed]);
+    shared.writeUInt16LE(extra.length, 24);
+    const local = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), shared, name, extra, packed]);
     const tail = Buffer.alloc(14);
     tail.writeUInt32LE(offset, 10);
-    centrals.push(Buffer.concat([Buffer.from([0x50, 0x4b, 0x01, 0x02, 20, 0]), shared, tail, name]));
+    centrals.push(Buffer.concat([Buffer.from([0x50, 0x4b, 0x01, 0x02, password ? 51 : 20, 0]), shared, tail, name, extra]));
     locals.push(local);
     offset += local.length;
   }
@@ -95,7 +128,7 @@ function parentName(chart: Chart, account: LedgerAccount): string | null {
  * Builds the export package and records the audit event. Budgets, goals, rules, payees and tags
  * join these files with the stages that bring them; the schema version covers that growth.
  */
-export async function buildExport(db: Db, context: RequestContext): Promise<{ filename: string; zip: Buffer }> {
+export async function buildExport(db: Db, context: RequestContext, password?: string): Promise<{ filename: string; zip: Buffer }> {
   const workspace = await getWorkspace(db, context.workspaceId);
   const chart = await loadChart(db, context.workspaceId);
   const records = await loadTransactionRecords(db, context.workspaceId);
@@ -215,5 +248,5 @@ export async function buildExport(db: Db, context: RequestContext): Promise<{ fi
     },
   ];
   await recordAuditEvent(db, { workspaceId: context.workspaceId, userId: context.userId, type: 'export.created', objectType: 'workspace', objectId: context.workspaceId });
-  return { filename: `fintrack-export-${today}.zip`, zip: toZip(files) };
+  return { filename: `fintrack-export-${today}.zip`, zip: toZip(files, { password }) };
 }
