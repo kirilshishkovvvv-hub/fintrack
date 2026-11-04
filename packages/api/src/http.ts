@@ -22,6 +22,7 @@ export type ProblemCode =
   | 'LOCKED_RECONCILED'
   | 'RECONCILIATION_DIFFERENCE'
   | 'ARCHIVE_BLOCKED'
+  | 'REAUTH_REQUIRED'
   | 'INTERNAL';
 
 export class ApiError extends Error {

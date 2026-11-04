@@ -3,17 +3,18 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { AccountRow } from '@/components/AccountRow';
-import { AppShell } from '@/components/AppShell';
+import { AppShell, LoadError } from '@/components/AppShell';
 import { active, loadAccounts, loadSummary, useApiData } from '@/lib/use-api';
 
 /** All accounts; archived ones are listed apart and keep their history (FR-19). */
 export default function AccountsPage() {
   const t = useTranslations('accounts');
   const tApp = useTranslations('app');
-  const { data } = useApiData(async () => {
+  const { data, failed, reload } = useApiData(async () => {
     const [accounts, summary] = await Promise.all([loadAccounts(), loadSummary()]);
     return { accounts, currency: summary.currency };
   });
+  if (failed) return <LoadError retry={reload} />;
 
   const archived = data?.accounts.filter((account) => account.archived) ?? [];
 
@@ -33,6 +34,9 @@ export default function AccountsPage() {
         </Link>
         <Link href="/categories" className="btn">
           {t('categories')}
+        </Link>
+        <Link href="/export" className="btn">
+          {t('export')}
         </Link>
       </div>
       {data && archived.length > 0 && (

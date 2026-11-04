@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { AppShell } from '@/components/AppShell';
+import { AppShell, LoadError } from '@/components/AppShell';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { loadCategories, notifyDataChanged, useApiData, type Category } from '@/lib/use-api';
 
@@ -16,7 +16,8 @@ export default function CategoriesPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const key = useRef(newIdempotencyKey());
-  const { data } = useApiData(loadCategories);
+  const { data, failed, reload } = useApiData(loadCategories);
+  if (failed) return <LoadError retry={reload} />;
 
   async function run(work: () => Promise<string>) {
     setBusy(true);

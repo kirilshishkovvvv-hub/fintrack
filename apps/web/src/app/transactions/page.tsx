@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { AppShell } from '@/components/AppShell';
+import { AppShell, LoadError } from '@/components/AppShell';
 import { TransactionRow } from '@/components/TransactionRow';
 import { api } from '@/lib/api';
 import { currentMonth, loadAccounts, loadCategories, loadSummary, useApiData, type Transaction } from '@/lib/use-api';
@@ -21,12 +21,13 @@ export default function TransactionsPage() {
   const [items, setItems] = useState<Transaction[] | null>(null);
   // Read by the loader, which also runs again after any change elsewhere on the page.
   const shownMonth = useRef(month);
-  const { data } = useApiData(async () => {
+  const { data, failed, reload } = useApiData(async () => {
     const [summary, accounts, categories] = await Promise.all([loadSummary(), loadAccounts(), loadCategories()]);
     const range = monthRange(shownMonth.current);
     setItems((await api<{ items: Transaction[] }>('GET', `/api/v1/transactions?from=${range.from}&to=${range.to}`)).items);
     return { currency: summary.currency, accounts, categories };
   });
+  if (failed) return <LoadError retry={reload} />;
 
   async function changeMonth(value: string) {
     shownMonth.current = value;

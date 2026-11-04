@@ -50,7 +50,8 @@ export async function startTestDatabase(): Promise<TestDatabase> {
     port,
     user: 'postgres',
     password,
-    persistent: false,
+    // Removed below, with retries: Windows can hold the folder briefly after the server stops.
+    persistent: true,
     initdbFlags: UTF8_CLUSTER,
     postgresFlags: NO_IO_WORKERS,
     onLog: () => undefined,
@@ -82,7 +83,7 @@ export async function startTestDatabase(): Promise<TestDatabase> {
     async stop() {
       await pool.end();
       await cluster.stop();
-      await rm(databaseDir, { recursive: true, force: true }).catch(() => undefined);
+      await rm(databaseDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => undefined);
     },
   };
 }

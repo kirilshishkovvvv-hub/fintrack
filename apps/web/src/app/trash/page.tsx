@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { AppShell } from '@/components/AppShell';
+import { AppShell, LoadError } from '@/components/AppShell';
 import { signedMoney } from '@/components/TransactionRow';
 import { useUndo } from '@/components/UndoToast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
@@ -17,7 +17,7 @@ export default function TrashPage() {
   const locale = useLocale();
   const offerUndo = useUndo();
   const [error, setError] = useState<string | null>(null);
-  const { data } = useApiData(async () => {
+  const { data, failed, reload } = useApiData(async () => {
     const [trash, accounts, categories, summary] = await Promise.all([
       api<{ items: (Transaction & { purgeAfter: string })[] }>('GET', '/api/v1/trash').then((r) => r.items),
       loadAccounts(),
@@ -26,6 +26,7 @@ export default function TrashPage() {
     ]);
     return { trash, accounts, categories, currency: summary.currency };
   });
+  if (failed) return <LoadError retry={reload} />;
 
   async function restore(tx: Transaction) {
     setError(null);

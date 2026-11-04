@@ -55,3 +55,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </>
   );
 }
+
+/** Shown when a page's data can't load, so it never stays on "Loading…". */
+export function LoadError({ retry }: { retry: () => void }) {
+  const t = useTranslations('app');
+  return (
+    <AppShell>
+      <p className="notice notice-error" role="alert">
+        {t('genericError')}{' '}
+        <button className="btn" type="button" onClick={retry}>
+          {t('retry')}
+        </button>
+      </p>
+    </AppShell>
+  );
+}

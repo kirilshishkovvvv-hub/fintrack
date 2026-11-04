@@ -168,6 +168,7 @@
     "title": "Accounts",
     "add": "Add account",
     "categories": "Categories",
+    "export": "Export my data",
     "archived": "Archived"
   },
   "account": {
@@ -257,6 +258,18 @@
     "mergeSubmit": "Merge",
     "merged": "{from} was merged into {into}.",
     "cancel": "Cancel"
+  },
+  "export": {
+    "title": "Export my data",
+    "intro": "Download a copy of everything you've entered: accounts, categories, transactions with their history, and reconciliations. It's a ZIP with CSV files for spreadsheets and one JSON file.",
+    "warning": "The file isn't encrypted. Keep it somewhere safe.",
+    "download": "Download my data",
+    "done": "Your download has started.",
+    "reauth": "For your security, confirm it's you before downloading.",
+    "email": "Email",
+    "password": "Password",
+    "confirm": "Confirm and download",
+    "invalid": "That email and password don't match."
   },
   "trash": {
     "title": "Recently deleted",

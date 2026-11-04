@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { AppShell } from '@/components/AppShell';
+import { AppShell, LoadError } from '@/components/AppShell';
 import { useUndo } from '@/components/UndoToast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { parseUserAmount } from '@/lib/money';
@@ -23,7 +23,8 @@ export default function NewTransactionPage() {
   const [busy, setBusy] = useState(false);
   const key = useRef(newIdempotencyKey());
   const offerUndo = useUndo();
-  const { data } = useApiData(async () => ({ accounts: await loadAccounts(), categories: await loadCategories() }));
+  const { data, failed, reload } = useApiData(async () => ({ accounts: await loadAccounts(), categories: await loadCategories() }));
+  if (failed) return <LoadError retry={reload} />;
 
   if (!data) {
     return (

@@ -382,6 +382,8 @@ export async function changeStatus(
   if (expectedVersion !== undefined && existing.version !== expectedVersion) {
     throw new VersionConflict('The transaction was changed since you opened it');
   }
+  // E-01: an opening balance is changed from the account settings, and can't be voided on its own.
+  if (existing.tx.kind === 'opening_balance') throw new ApiError(422, 'NOT_EDITABLE', 'An opening balance cannot be voided or deleted on its own');
   const transition = TRANSITIONS[action];
   if (!(transition.from as readonly string[]).includes(existing.tx.status)) {
     throw new ApiError(409, 'INVALID_STATE', `A ${existing.tx.status} transaction can't be changed that way`);

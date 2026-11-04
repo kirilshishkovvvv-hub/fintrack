@@ -22,6 +22,6 @@ export const notYetEncoded: { id: string; reason: string; stage: number }[] = [
   { id: 'GT-16', reason: 'planned card repayment and card-funded plans in Safe to Spend', stage: 5 },
   { id: 'GT-20', reason: 'planned instalment matched to an occurrence', stage: 5 },
   { id: 'GT-39 (b)', reason: 'import confirmation is all-or-nothing; part (a) is covered by the database tests', stage: 4 },
-  { id: 'GT-59 (export, search)', reason: 'isolation of export and search; read, use and change are covered by the API tests', stage: 4 },
+  { id: 'GT-59 (search)', reason: 'isolation of search; read, use, change and export are covered by the API tests', stage: 4 },
   { id: 'GT-71 (import rows)', reason: 'foreign-currency import rows; the currency lock is covered by the database tests', stage: 4 },
 ];

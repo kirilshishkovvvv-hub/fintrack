@@ -16,13 +16,30 @@ The running record of implementation work: what was built, what was verified, an
 | Screens: sign-up, email verification, sign-in, onboarding (EUR or USD), dashboard, add account, add transaction, activity list | ✅ Done, checked in the browser |
 | Local development: `npm run dev:all` starts a local database and the web app; security emails print to the server log | ✅ Done |
 | Edit, void, delete to trash, restore and undo, with a version history per transaction; 30-day trash purge | ✅ Done, tested, checked in the browser |
-| Reconciliation with adjustments and locks, quick balance update, archive and merge (GT-40 to GT-42, GT-45) | ✅ Done and tested (177 tests); screens built; **browser check still to do** |
-| Export; audit view | ⏳ Next |
+| Reconciliation with adjustments and locks, quick balance update, archive and merge (GT-40 to GT-42, GT-45) | ✅ Done, tested, checked in the browser |
+| Export of all data: CSV and JSON in a ZIP, with a recent sign-in required (FR-17) | ✅ Done, tested, checked in the browser |
+| Audit view | ⏳ Next |
 | "Keep me signed in", per-account login slowdown, account deletion | ⏳ Next |
 | CSV import (moved here from Stage 7, AP-15) | ⏳ After the above |
 | End-to-end browser tests (Playwright) | ⏳ Next |
 
-**Test run (3 Nov 2026, evening):** 148 passed, 11 todo, 0 failed. Both type checks clean.
+**Test run (4 Nov 2026):** 182 passed, 11 todo, 0 failed. Both type checks clean.
+
+### Added on 4 Nov 2026: browser check of reconciliation, and export
+
+- **Checked in the browser:**
+  - GT-40's figures: ticked balance €2,251.17, statement €2,243.17, difference +€8.00, adjustment −€8.00;
+  - unticking an item updates the difference (+€608.00), and finishing locks every item;
+  - unlock asks for confirmation; after an edit the reconciliation shows "Needs redoing" at −€10.00 (GT-42);
+  - a cash count, archiving an account at zero, and merging a category;
+  - Greek text and emoji are stored and shown correctly.
+- **Found and fixed:** opening balances could be voided or deleted on their own, against E-01. Six pages stayed on "Loading…" if a load failed; they now show an error with a retry.
+- **Export (AC-17.1 to AC-17.3):**
+  - accounts, categories, transactions (one row per line) and reconciliations as CSV, UTF-8 with a BOM, plus a complete data.json with a schema version;
+  - each transaction's lines sum to 0, balances match the app, and a description starting with "=" is exported as inert text;
+  - it needs a sign-in within 10 minutes (BR-01.5), and the screen asks for the password again if not; each export is audited;
+  - another user's data never appears in it, and Windows' own unzip opens the file.
+- **Not in the export yet:** budgets, goals, rules, payees and tags, because they don't exist yet. They join it with their stages.
 
 ### Added on 3 Nov 2026: edit, void, trash, restore and undo
 
@@ -100,6 +117,8 @@ At 360 px wide there's no horizontal scrolling on the dashboard or the add-trans
 | T-33 | **Preview and finish instead of a server-side draft:** `POST /reconciliations/preview` returns the figures for the ticks so far; `POST /reconciliations` finishes it. Unlocking also unlocks later reconciliations of the same account; a new reconciliation supersedes broken ones | Simpler than storing drafts, with the same rules. | Easy |
 | T-34 | **Default category "Untracked spending"** added to the seed | Named by E-37 and GT-41. | Easy |
 | T-35 | **Local PostgreSQL clusters are UTF-8** (`--encoding=UTF8 --locale=C`), and migrations refuse a non-UTF-8 database | Found while testing: on this machine initdb picked WIN1251, which can't store Greek or emoji. **The existing local dev cluster (`.pgdata/cluster`) is WIN1251 and must be recreated** before `npm run dev:all` starts again; it holds only test data. | — |
+| T-36 | **The ZIP is written by a small function using Node's built-in compression**, with no new dependency | Fewer third-party packages (Annex L item 7). Checked with Windows' and Info-ZIP's unzip. | Easy |
+| T-37 | **"Recent sign-in" is measured from when the session signed in**, not from Better Auth's own freshness check | Sessions slide with activity, so the time of the last refresh wouldn't prove the user recently entered a password. | Easy |
 | T-31 | **Lifecycle rules as written in §9.3:** only a posted transaction can be edited, voided or deleted; voided and deleted ones can only be restored. Restoring re-checks the ledger rules (for example an archived account, LR-14), and a deleted transaction older than 30 days can't be restored | Follows the approved lifecycle table exactly. | — |
 
 ---

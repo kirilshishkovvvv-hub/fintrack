@@ -3,7 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { AppShell } from '@/components/AppShell';
+import { AppShell, LoadError } from '@/components/AppShell';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { formatMoney, parseUserAmount } from '@/lib/money';
 import { active, loadAccounts, loadCategories, loadSummary, notifyDataChanged, todayLocal, useApiData, type Transaction } from '@/lib/use-api';
@@ -34,10 +34,11 @@ export default function ReconcilePage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const key = useRef(newIdempotencyKey());
-  const { data } = useApiData(async () => {
+  const { data, failed, reload } = useApiData(async () => {
     const [accounts, categories, summary] = await Promise.all([loadAccounts(), loadCategories(), loadSummary()]);
     return { account: accounts.find((account) => account.id === id) ?? null, categories, currency: summary.currency };
   });
+  if (failed) return <LoadError retry={reload} />;
 
   if (!data) {
     return (

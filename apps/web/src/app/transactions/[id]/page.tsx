@@ -92,7 +92,7 @@ export default function TransactionDetailPage() {
   const categoryNames = tx.lines.filter((line) => categories.has(line.ledgerAccountId)).map((line) => categories.get(line.ledgerAccountId)!.name);
   // A reconciled transaction is locked: nothing is offered until its reconciliation is unlocked (FR-18).
   const shape = tx.reconciled ? null : editShape(tx, accounts, categories);
-  const changeable = tx.status === 'posted' && !tx.reconciled;
+  const changeable = tx.status === 'posted' && !tx.reconciled && tx.kind !== 'opening_balance';
   const ownAccountId = tx.lines.find((line) => accounts.has(line.ledgerAccountId))?.ledgerAccountId;
   const title = tx.description ?? categoryNames[0] ?? tKinds(tx.kind);
   const when = (iso: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
