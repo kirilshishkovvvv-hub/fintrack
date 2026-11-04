@@ -14,9 +14,12 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json && tsc -p apps/web/tsconfig.json",
     "dev:all": "node scripts/dev.ts",
-    "dev": "npm run dev -w @fintrack/web"
+    "dev": "npm run dev -w @fintrack/web",
+    "e2e": "playwright test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
     "embedded-postgres": "18.4.0-beta.17",
