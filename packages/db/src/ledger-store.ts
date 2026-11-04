@@ -207,9 +207,9 @@ export async function insertPostings(db: Db, workspaceId: string, tx: Transactio
     lineNo += 1;
     await db.query(
       `INSERT INTO fin.postings (id, workspace_id, transaction_id, txn_date, txn_status, ledger_account_id,
-                                 amount_minor, currency, line_no, mark)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [uuidv7(), workspaceId, tx.id, tx.date, tx.status, posting.ledgerAccountId, posting.amount, currency, lineNo, posting.mark ?? null],
+                                 amount_minor, currency, line_no, mark, memo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [uuidv7(), workspaceId, tx.id, tx.date, tx.status, posting.ledgerAccountId, posting.amount, currency, lineNo, posting.mark ?? null, posting.memo ?? null],
     );
   }
 }
@@ -277,6 +277,7 @@ interface PostingRow {
   ledger_account_id: string;
   amount_minor: string;
   mark: 'discount' | 'deduction' | null;
+  line_memo: string | null;
 }
 
 /** A transaction as stored: the domain transaction plus its text, origin and version. */
@@ -292,7 +293,7 @@ export async function loadTransactionRecords(db: Db, workspaceId: string, onlyId
   const result = await db.query<PostingRow>(`
     SELECT t.id AS transaction_id, to_char(t.txn_date, 'YYYY-MM-DD') AS txn_date, t.kind, t.status, t.refund_of_id,
            t.origin, t.description, t.memo, t.version, t.trashed_at::text,
-           p.ledger_account_id, p.amount_minor::text, p.mark
+           p.ledger_account_id, p.amount_minor::text, p.mark, p.memo AS line_memo
       FROM fin.transactions t
       JOIN fin.postings p ON p.transaction_id = t.id
      WHERE t.workspace_id = $1 AND p.workspace_id = $1 AND ($2::uuid IS NULL OR t.id = $2)
@@ -308,7 +309,12 @@ export async function loadTransactionRecords(db: Db, workspaceId: string, onlyId
     }
     const amount = Number(row.amount_minor);
     if (!Number.isSafeInteger(amount)) throw new Error(`Unsafe amount in posting: ${row.amount_minor}`);
-    record.tx.postings.push(row.mark ? { ledgerAccountId: row.ledger_account_id, amount, mark: row.mark } : { ledgerAccountId: row.ledger_account_id, amount });
+    record.tx.postings.push({
+      ledgerAccountId: row.ledger_account_id,
+      amount,
+      ...(row.mark ? { mark: row.mark } : {}),
+      ...(row.line_memo ? { memo: row.line_memo } : {}),
+    });
   }
   return [...byId.values()];
 }

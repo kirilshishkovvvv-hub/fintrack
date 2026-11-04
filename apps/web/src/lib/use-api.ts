@@ -45,6 +45,7 @@ export interface TransactionLine {
   ledgerAccountId: string;
   amount_minor: number;
   mark?: string | null;
+  memo?: string | null;
 }
 
 export interface Transaction {
@@ -52,6 +53,7 @@ export interface Transaction {
   date: string;
   kind: string;
   status: 'posted' | 'voided' | 'trashed';
+  refundOfId?: string | null;
   /** In a completed reconciliation, and so locked (FR-18). */
   reconciled: boolean;
   version: number;
@@ -72,6 +74,7 @@ export interface VersionSnapshot {
 }
 
 export interface TransactionDetail extends Transaction {
+  refundOriginalStatus: string | null;
   versions: {
     version: number;
     changeType: 'create' | 'edit' | 'void' | 'restore' | 'trash' | 'unlock';

@@ -28,6 +28,7 @@ export type ProblemCode =
   | 'DECISIONS_REQUIRED'
   | 'CURRENCY_CONFIRM_REQUIRED'
   | 'IMPORT_EDITED'
+  | 'REFUND_EXCEEDS_ORIGINAL'
   | 'INTERNAL';
 
 export class ApiError extends Error {

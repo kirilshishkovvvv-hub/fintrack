@@ -12,6 +12,7 @@ export interface CategoryLine {
   /** Positive cents. */
   amount: Cents;
   mark?: LineMark;
+  memo?: string;
 }
 
 interface Base {
@@ -25,9 +26,10 @@ function transaction(base: Base, kind: Transaction['kind'], postings: Posting[],
   return tx;
 }
 
-function posting(ledgerAccountId: string, amount: Cents, mark?: LineMark): Posting {
+function posting(ledgerAccountId: string, amount: Cents, mark?: LineMark, memo?: string): Posting {
   const result: Posting = { ledgerAccountId, amount: cents(amount) };
   if (mark !== undefined) result.mark = mark;
+  if (memo !== undefined) result.memo = memo;
   return result;
 }
 
@@ -52,7 +54,7 @@ export function openingBalance(
 /** An expense, optionally split across categories, with optional marked discount lines (E-05 to E-07). */
 export function expense(base: Base & { accountId: string; lines: CategoryLine[] }): Transaction {
   const categoryPostings = base.lines.map((line) =>
-    posting(line.categoryId, line.mark === 'discount' ? -line.amount : line.amount, line.mark),
+    posting(line.categoryId, line.mark === 'discount' ? -line.amount : line.amount, line.mark, line.memo),
   );
   const total = sumCents(categoryPostings.map((p) => p.amount));
   return transaction(base, 'expense', [posting(base.accountId, -total), ...categoryPostings]);
@@ -62,8 +64,8 @@ export function expense(base: Base & { accountId: string; lines: CategoryLine[] 
 export function income(base: Base & { accountId: string; lines: CategoryLine[] }): Transaction {
   const categoryPostings = base.lines.map((line) =>
     line.mark === 'deduction'
-      ? posting(line.categoryId, line.amount, 'deduction')
-      : posting(line.categoryId, -line.amount, line.mark),
+      ? posting(line.categoryId, line.amount, 'deduction', line.memo)
+      : posting(line.categoryId, -line.amount, line.mark, line.memo),
   );
   const received = -sumCents(categoryPostings.map((p) => p.amount));
   return transaction(base, 'income', [posting(base.accountId, received), ...categoryPostings]);
@@ -75,7 +77,7 @@ export function transfer(
 ): Transaction {
   const fee = base.fee?.amount ?? 0;
   const postings = [posting(base.fromId, -(base.amount + fee)), posting(base.toId, base.amount)];
-  if (base.fee) postings.push(posting(base.fee.categoryId, base.fee.amount));
+  if (base.fee) postings.push(posting(base.fee.categoryId, base.fee.amount, undefined, base.fee.memo));
   return transaction(base, 'transfer', postings);
 }
 
@@ -89,7 +91,7 @@ export function refund(
 ): Transaction {
   const categoryPostings = base.lines.map((line) => {
     const kind = chart.get(line.categoryId).kind;
-    return posting(line.categoryId, kind === 'income' ? line.amount : -line.amount);
+    return posting(line.categoryId, kind === 'income' ? line.amount : -line.amount, undefined, line.memo);
   });
   const accountAmount = -sumCents(categoryPostings.map((p) => p.amount));
   return transaction(base, 'refund', [posting(base.accountId, accountAmount), ...categoryPostings], base.refundOfId);
@@ -99,7 +101,7 @@ export function refund(
 export function debtPayment(
   base: Base & { fromId: string; liabilityId: string; principal: Cents; extras?: CategoryLine[] },
 ): Transaction {
-  const extras = (base.extras ?? []).map((line) => posting(line.categoryId, line.amount));
+  const extras = (base.extras ?? []).map((line) => posting(line.categoryId, line.amount, undefined, line.memo));
   const total = base.principal + sumCents(extras.map((p) => p.amount));
   return transaction(base, 'debt_payment', [
     posting(base.fromId, -total),
@@ -109,11 +111,11 @@ export function debtPayment(
 }
 
 /** A general split with any balanced mix of category and user-account lines (§5.4, E-30). */
-export function split(base: Base & { lines: { ledgerAccountId: string; amount: Cents; mark?: LineMark }[] }): Transaction {
+export function split(base: Base & { lines: { ledgerAccountId: string; amount: Cents; mark?: LineMark; memo?: string }[] }): Transaction {
   return transaction(
     base,
     'split',
-    base.lines.map((line) => posting(line.ledgerAccountId, line.amount, line.mark)),
+    base.lines.map((line) => posting(line.ledgerAccountId, line.amount, line.mark, line.memo)),
   );
 }
 

@@ -226,6 +226,12 @@ const UNDO_GRACE_SECONDS = 5;
 /** Opening balances, adjustments and valuations change through their own flows, not an edit. */
 const SYSTEM_KINDS: ReadonlySet<Transaction['kind']> = new Set(['opening_balance', 'adjustment', 'valuation']);
 
+const toLine = (line: { categoryId: string; amount_minor: number; memo?: string | undefined }) => ({
+  categoryId: line.categoryId,
+  amount: line.amount_minor,
+  ...(line.memo ? { memo: line.memo } : {}),
+});
+
 function buildFromIntention(chart: Chart, id: string, input: EditInput): Transaction {
   switch (input.kind) {
     case 'transfer':
@@ -236,6 +242,7 @@ function buildFromIntention(chart: Chart, id: string, input: EditInput): Transac
         categoryId: line.categoryId,
         amount: line.amount_minor,
         ...(line.mark ? { mark: line.mark } : {}),
+        ...(line.memo ? { memo: line.memo } : {}),
       }));
       return input.kind === 'expense'
         ? build.expense({ id, date: input.date, accountId: input.accountId, lines })
@@ -246,7 +253,7 @@ function buildFromIntention(chart: Chart, id: string, input: EditInput): Transac
         id,
         date: input.date,
         accountId: input.accountId,
-        lines: input.lines.map((line) => ({ categoryId: line.categoryId, amount: line.amount_minor })),
+        lines: input.lines.map(toLine),
         ...(input.refundOfId ? { refundOfId: input.refundOfId } : {}),
       });
     case 'debt_payment':
@@ -256,20 +263,20 @@ function buildFromIntention(chart: Chart, id: string, input: EditInput): Transac
         fromId: input.fromAccountId,
         liabilityId: input.liabilityAccountId,
         principal: input.principal_minor,
-        extras: (input.extras ?? []).map((line) => ({ categoryId: line.categoryId, amount: line.amount_minor })),
+        extras: (input.extras ?? []).map(toLine),
       });
     case 'split':
       return build.split({
         id,
         date: input.date,
-        lines: input.lines.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amount: line.amount_minor })),
+        lines: input.lines.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amount: line.amount_minor, ...(line.memo ? { memo: line.memo } : {}) })),
       });
   }
 }
 
 function buildTransfer(id: string, input: TransferInput): Transaction {
   const base = { id, date: input.date, fromId: input.fromAccountId, toId: input.toAccountId, amount: input.amount_minor };
-  return input.fee ? build.transfer({ ...base, fee: { categoryId: input.fee.categoryId, amount: input.fee.amount_minor } }) : build.transfer(base);
+  return input.fee ? build.transfer({ ...base, fee: toLine(input.fee) }) : build.transfer(base);
 }
 
 type TextInput = { description?: string | undefined; memo?: string | undefined };
@@ -302,9 +309,26 @@ async function record(db: Db, context: RequestContext, tx: Transaction, chart: C
   return withUndo(transactionDto({ tx, origin: 'manual', version: 1, trashedAt: null, ...text }), versionId);
 }
 
+/** The size of a refund or its original: its category lines, whatever their direction. */
+const categoryTotal = (tx: Transaction, chart: Chart) => tx.postings.filter((p) => chart.find(p.ledgerAccountId)?.category).reduce((sum, p) => sum + Math.abs(p.amount), 0);
+
+/** BR-04.7: a refund can exceed its original only after explicit confirmation. */
+async function checkRefundSize(db: Db, context: RequestContext, tx: Transaction, chart: Chart, input: EditInput) {
+  if (input.kind !== 'refund' || !tx.refundOfId || input.confirmExceedsOriginal) return;
+  const original = await loadTransactionRecord(db, context.workspaceId, tx.refundOfId);
+  if (original && categoryTotal(tx, chart) > categoryTotal(original.tx, chart)) {
+    throw new ApiError(422, 'REFUND_EXCEEDS_ORIGINAL', 'This refund is larger than the original purchase', {
+      refund_minor: categoryTotal(tx, chart),
+      original_minor: categoryTotal(original.tx, chart),
+    });
+  }
+}
+
 export async function recordTransaction(db: Db, context: RequestContext, input: TransactionInput) {
   const chart = await loadChart(db, context.workspaceId);
-  return record(db, context, buildFromIntention(chart, uuidv7(), input), chart, input);
+  const tx = buildFromIntention(chart, uuidv7(), input);
+  await checkRefundSize(db, context, tx, chart, input);
+  return record(db, context, tx, chart, input);
 }
 
 export async function recordTransfer(db: Db, context: RequestContext, input: TransferInput) {
@@ -339,8 +363,11 @@ export async function loadOrNotFound(db: Db, context: RequestContext, id: string
 export async function getTransaction(db: Db, context: RequestContext, id: string) {
   const record = await loadOrNotFound(db, context, id);
   const versions = await listTransactionVersions(db, context.workspaceId, id);
+  // E-39: a refund stays when its original is voided or deleted, and the screen says so.
+  const original = record.tx.refundOfId ? await loadTransactionRecord(db, context.workspaceId, record.tx.refundOfId) : null;
   return {
     ...transactionDto(record, await lockedTransactionIds(db, context.workspaceId)),
+    refundOriginalStatus: original?.tx.status ?? null,
     versions: versions.map((entry) => ({
       version: entry.version,
       changeType: entry.changeType,
@@ -361,6 +388,7 @@ export async function editTransaction(db: Db, context: RequestContext, id: strin
   }
   const chart = await loadChart(db, context.workspaceId);
   const tx = buildFromIntention(chart, id, input);
+  await checkRefundSize(db, context, tx, chart, input);
   await checkAgainstLedger(db, context, tx, chart);
   const text = textOf(input);
   const result = await replaceTransaction(db, context.workspaceId, tx, { ...text, expectedVersion, userId: context.userId });
@@ -466,6 +494,7 @@ function linesDto(postings: Transaction['postings']) {
     ledgerAccountId: posting.ledgerAccountId,
     amount_minor: posting.amount,
     mark: posting.mark ?? null,
+    memo: posting.memo ?? null,
   }));
 }
 

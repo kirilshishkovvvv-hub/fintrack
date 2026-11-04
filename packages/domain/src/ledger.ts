@@ -61,6 +61,8 @@ export interface Posting {
   /** Signed cents: positive = debit, negative = credit. Never zero (LR-02). */
   amount: Cents;
   mark?: LineMark;
+  /** A note on this line (BR-06.4). Never affects a figure. */
+  memo?: string;
 }
 
 export interface Transaction {

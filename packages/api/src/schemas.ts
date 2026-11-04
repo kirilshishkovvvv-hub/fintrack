@@ -44,7 +44,7 @@ const meta = {
   description: text(500).optional(),
   memo: text(1000).optional(),
 };
-const plainLine = z.strictObject({ categoryId: id, amount_minor: positiveMinor });
+const plainLine = z.strictObject({ categoryId: id, amount_minor: positiveMinor, memo: text(500).optional() });
 const expenseLine = plainLine.extend({ mark: z.literal('discount').optional() });
 const incomeLine = plainLine.extend({ mark: z.literal('deduction').optional() });
 
@@ -57,6 +57,8 @@ export const createTransactionBody = z.discriminatedUnion('kind', [
     accountId: id,
     lines: z.array(plainLine).min(1).max(50),
     refundOfId: id.optional(),
+    /** BR-04.7: a refund above the original needs this explicit confirmation. */
+    confirmExceedsOriginal: z.boolean().optional(),
     ...meta,
   }),
   z.strictObject({
@@ -71,7 +73,7 @@ export const createTransactionBody = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('split'),
     date: isoDate,
-    lines: z.array(z.strictObject({ ledgerAccountId: id, amount_minor: signedMinor })).min(2).max(50),
+    lines: z.array(z.strictObject({ ledgerAccountId: id, amount_minor: signedMinor, memo: text(500).optional() })).min(2).max(50),
     ...meta,
   }),
 ]);

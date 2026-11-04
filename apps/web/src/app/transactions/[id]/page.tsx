@@ -6,49 +6,23 @@ import { useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { AppShell } from '@/components/AppShell';
 import { signedMoney } from '@/components/TransactionRow';
+import { TransactionForm, valuesFrom } from '@/components/TransactionForm';
 import { useUndo } from '@/components/UndoToast';
 import { api, ApiProblem, errorMessage, newIdempotencyKey } from '@/lib/api';
-import { parseUserAmount } from '@/lib/money';
 import {
   loadAccounts,
   loadCategories,
   loadSummary,
   notifyDataChanged,
-  todayLocal,
   useApiData,
-  type Account,
-  type Category,
   type Transaction,
   type TransactionDetail,
 } from '@/lib/use-api';
-
-/** "45.60" for 4560: an exact decimal string for the edit field, without floating point. */
-function editableAmount(minor: number): string {
-  const abs = Math.abs(minor);
-  return `${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
-}
-
-/** The simple shapes the edit form handles: one account and one category, or a plain transfer. */
-function editShape(tx: Transaction, accounts: Map<string, Account>, categories: Map<string, Category>) {
-  if (tx.status !== 'posted' || tx.lines.some((line) => line.mark)) return null;
-  const own = tx.lines.filter((line) => accounts.has(line.ledgerAccountId));
-  const cats = tx.lines.filter((line) => categories.has(line.ledgerAccountId));
-  if ((tx.kind === 'expense' || tx.kind === 'income') && own.length === 1 && cats.length === 1 && tx.lines.length === 2) {
-    return { kind: tx.kind, accountId: own[0]!.ledgerAccountId, categoryId: cats[0]!.ledgerAccountId, amount: Math.abs(own[0]!.amount_minor) };
-  }
-  if (tx.kind === 'transfer' && own.length === 2 && tx.lines.length === 2) {
-    const from = own.find((line) => line.amount_minor < 0)!;
-    const to = own.find((line) => line.amount_minor > 0)!;
-    return { kind: 'transfer' as const, fromId: from.ledgerAccountId, toId: to.ledgerAccountId, amount: to.amount_minor };
-  }
-  return null;
-}
 
 export default function TransactionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const t = useTranslations('transaction');
   const tKinds = useTranslations('transactions.kinds');
-  const tNew = useTranslations('newTransaction');
   const tApp = useTranslations('app');
   const tErrors = useTranslations('errors');
   const locale = useLocale();
@@ -91,7 +65,7 @@ export default function TransactionDetailPage() {
   const ownNames = tx.lines.filter((line) => accounts.has(line.ledgerAccountId)).map((line) => accounts.get(line.ledgerAccountId)!.name);
   const categoryNames = tx.lines.filter((line) => categories.has(line.ledgerAccountId)).map((line) => categories.get(line.ledgerAccountId)!.name);
   // A reconciled transaction is locked: nothing is offered until its reconciliation is unlocked (FR-18).
-  const shape = tx.reconciled ? null : editShape(tx, accounts, categories);
+  const shape = tx.reconciled ? null : valuesFrom(tx, accounts, categories);
   const changeable = tx.status === 'posted' && !tx.reconciled && tx.kind !== 'opening_balance';
   const ownAccountId = tx.lines.find((line) => accounts.has(line.ledgerAccountId))?.ledgerAccountId;
   const title = tx.description ?? categoryNames[0] ?? tKinds(tx.kind);
@@ -115,19 +89,12 @@ export default function TransactionDetailPage() {
     }
   }
 
-  function save(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!shape) return;
-    const form = new FormData(event.currentTarget);
-    const amount = parseUserAmount(String(form.get('amount') ?? ''));
-    if (amount === null || amount <= 0) return setError(tErrors('invalidAmount'));
-    const date = String(form.get('date'));
-    const description = String(form.get('description') ?? '').trim() || undefined;
-    const body =
-      shape.kind === 'transfer'
-        ? { kind: 'transfer', date, fromAccountId: form.get('from'), toAccountId: form.get('to'), amount_minor: amount, description }
-        : { kind: shape.kind, date, accountId: form.get('account'), lines: [{ categoryId: form.get('category'), amount_minor: amount }], description };
-    void run(() => api<Transaction>('PATCH', `/api/v1/transactions/${tx.id}`, { ifMatch: tx.version, body }), t('saved'));
+  // Problems go back to the form, which knows how to ask about them.
+  async function save(body: Record<string, unknown>) {
+    const result = await api<Transaction>('PATCH', `/api/v1/transactions/${tx.id}`, { ifMatch: tx.version, body });
+    offerUndo(t('saved'), result.undo);
+    setEditing(false);
+    notifyDataChanged();
   }
 
   const voidTx = () => run(() => api<Transaction>('POST', `/api/v1/transactions/${tx.id}/void`, { idempotencyKey: key.current }), t('voidedToast'));
@@ -138,27 +105,6 @@ export default function TransactionDetailPage() {
       t('trashedToast'),
       () => router.replace('/transactions'),
     );
-
-  const accountOptions = data.accounts
-    .filter((account) => !account.archived)
-    .map((account) => (
-      <option key={account.id} value={account.id}>
-        {account.name}
-      </option>
-    ));
-  const categoryOptions =
-    shape && shape.kind !== 'transfer'
-      ? data.categories
-          .filter((category) => category.kind === shape.kind && !category.archived)
-          .map((category) => {
-            const parent = category.parentId ? categories.get(category.parentId) : undefined;
-            return (
-              <option key={category.id} value={category.id}>
-                {parent ? `${parent.name} › ${category.name}` : category.name}
-              </option>
-            );
-          })
-      : null;
 
   return (
     <AppShell>
@@ -189,6 +135,7 @@ export default function TransactionDetailPage() {
             <span>{categoryNames.join(', ')}</span>
           </div>
         )}
+        {tx.refundOriginalStatus && tx.refundOriginalStatus !== 'posted' && <p className="notice notice-warning small">{t('refundOriginalGone')}</p>}
         {tx.status === 'voided' && <p className="notice notice-warning small">{t('voidedNote')}</p>}
         {tx.status === 'trashed' && <p className="notice notice-warning small">{t('trashedNote')}</p>}
         {tx.reconciled && (
@@ -207,60 +154,7 @@ export default function TransactionDetailPage() {
       )}
 
       {editing && shape ? (
-        <form className="card" onSubmit={save}>
-          <h2>{t('edit')}</h2>
-          <div className="field">
-            <label htmlFor="amount">{tNew('amount')}</label>
-            <input id="amount" name="amount" type="text" inputMode="decimal" className="amount-input" defaultValue={editableAmount(shape.amount)} required />
-          </div>
-          {shape.kind === 'transfer' ? (
-            <div className="grid-2">
-              <div className="field">
-                <label htmlFor="from">{tNew('from')}</label>
-                <select id="from" name="from" defaultValue={shape.fromId}>
-                  {accountOptions}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="to">{tNew('to')}</label>
-                <select id="to" name="to" defaultValue={shape.toId}>
-                  {accountOptions}
-                </select>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="field">
-                <label htmlFor="account">{tNew('account')}</label>
-                <select id="account" name="account" defaultValue={shape.accountId}>
-                  {accountOptions}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="category">{tNew('category')}</label>
-                <select id="category" name="category" defaultValue={shape.categoryId}>
-                  {categoryOptions}
-                </select>
-              </div>
-            </>
-          )}
-          <div className="field">
-            <label htmlFor="date">{tNew('date')}</label>
-            <input id="date" name="date" type="date" defaultValue={tx.date} max={todayLocal()} required />
-          </div>
-          <div className="field">
-            <label htmlFor="description">{tNew('description')}</label>
-            <input id="description" name="description" type="text" maxLength={500} defaultValue={tx.description ?? ''} />
-          </div>
-          <div className="actions">
-            <button className="btn btn-primary" type="submit" disabled={busy}>
-              {t('saveChanges')}
-            </button>
-            <button className="btn" type="button" onClick={() => setEditing(false)}>
-              {t('cancel')}
-            </button>
-          </div>
-        </form>
+        <TransactionForm accounts={data.accounts} categories={data.categories} currency={currency} initial={shape} lockKind submitLabel={t('saveChanges')} onSubmit={save} onCancel={() => setEditing(false)} />
       ) : (
         <section className="card actions" aria-label={t('actions')}>
           {changeable && shape && (
@@ -282,6 +176,16 @@ export default function TransactionDetailPage() {
             <button className="btn btn-primary" type="button" onClick={() => void restore()} disabled={busy}>
               {t('restore')}
             </button>
+          )}
+          {tx.status === 'posted' && (tx.kind === 'expense' || tx.kind === 'income') && (
+            <Link href={`/transactions/new?refundOf=${tx.id}`} className="btn">
+              {t('recordRefund')}
+            </Link>
+          )}
+          {shape && (
+            <Link href={`/transactions/new?copy=${tx.id}`} className="btn">
+              {t('duplicate')}
+            </Link>
           )}
           {changeable && !shape && <p className="small muted">{t('editLater')}</p>}
         </section>
