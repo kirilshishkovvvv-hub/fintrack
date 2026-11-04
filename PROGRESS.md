@@ -7,9 +7,10 @@ _Last verified against the code: 4 Nov 2026, commit `6e4edc9`._
 ## Handoff
 
 - **Current stage:** Stage 4 (core application) plus the import work moved forward (AP-15). **Not finished:** see "Missing from Stage 4".
-- **Current task:** none in progress. The context-preservation system was just set up.
-- **Next action:** get the user's answers to "Pending decisions" 1 and 2, then build the top item of "Next steps".
-- **Don't:** start Stage 5 before the user has seen the corrected Stage 4 status.
+- **Current task:** finishing the missing Stage 4 items, in the order of "Next steps" (user decision, 4 Nov 2026).
+- **Done in this task:** password reset, change password and email, sign out everywhere, 2FA screens, new-device notice (`224b0c3`).
+- **Next action:** full transaction form (refund, debt payment, split, duplicate, line memos), then search, settings, payees, legal pages.
+- **Don't:** start Stage 5 until the list is finished. New queries stay plain SQL until decision D-1.
 
 ## Correction to an earlier report
 
@@ -62,9 +63,6 @@ Checked by searching the routes and screens on 4 Nov 2026. "API" means it exists
 
 | Must item | State |
 |---|---|
-| **Password reset** (FR-01, AC-01.3) | Library route only: no screen, no test |
-| Change password; sign out everywhere (AC-01.4) | No screen, no test of the password-change case |
-| **2FA, optional, at launch (AD-15)** | Plugin on: no screen, no test |
 | Refund, debt payment and split entry; editing them (FR-04, FR-06) | API only for entry; no edit form |
 | Search and filter with a server total (BR-04.5, AC-04.5); GT-59 search | Only a month picker; lists aren't paged |
 | Edit an account; change an opening balance (E-03) | No route or screen |
