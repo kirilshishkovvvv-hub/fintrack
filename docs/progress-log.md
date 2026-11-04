@@ -4,7 +4,9 @@ The running record of implementation work: what was built, what was verified, an
 
 ---
 
-## Stage 4 · Core application (started 3 Nov 2026)
+## Stage 4 · Core application (3 to 4 Nov 2026)
+
+**Status: built.** Every item below is done, apart from the limits listed in each section. Exit criteria (Stage 1 §12): GT-40 to GT-45 pass, export works, usable at 360 px. AC-17.4 (re-importing an export) is a Should and isn't built.
 
 ### Summary
 
@@ -22,10 +24,28 @@ The running record of implementation work: what was built, what was verified, an
 | "Keep me signed in" (14 idle days), per-account login slowdown | ✅ Done and tested |
 | Account deletion: request, 7-day cancel window, purge | ✅ Done and tested; request and cancel checked in the browser |
 | CSV import (moved here from Stage 7, AP-15) | ✅ Done, tested, checked in the browser; matching to planned bills joins with Stage 5 |
-| End-to-end browser tests (Playwright) | ⏳ Next |
-| Passkeys (your addition) | ⏳ After the browser tests |
+| End-to-end browser tests (Playwright), with accessibility checks | ✅ Done: 11 journeys, on desktop and at 360 px |
+| Passkeys (your addition, PK-1) | ✅ Done and tested with a virtual device; **real devices still to try** |
 
-**Test run (4 Nov 2026, late evening):** 229 passed, 10 todo, 0 failed. Both type checks clean.
+**Test run (4 Nov 2026, night):** 229 passed, 10 todo, 0 failed, plus 22 browser tests passed (`npm run e2e`, 11 journeys × desktop and phone). Both type checks clean, and a production build (`next build`) succeeds.
+
+### Added on 4 Nov 2026 (night): browser tests and passkeys
+
+- **Browser tests** run in real Chrome against a throwaway database:
+  - sign-up through to Safe to Spend, then edit, undo, delete and restore;
+  - import, review, confirm and undo;
+  - reconcile with an adjustment, lock and unlock;
+  - merge categories and read the activity log;
+  - encrypted export, deletion, cancel, and deletion through to the purge;
+  - keyboard-only sign-in;
+  - five passkey journeys.
+- **Accessibility:** axe (WCAG 2.1 A and AA) passes on all the main screens, with light colours on desktop and dark at 360 px. Automated checks catch only some problems, so this doesn't replace a manual review or a screen-reader test.
+- **Passkeys (PK-1):** add, name and remove them under "Your data and privacy"; sign in with one; use one to confirm a sensitive action.
+- **A weakness in the passkey plugin, fixed:** it doesn't require the face, finger or PIN check, so a key that was only tapped would have been accepted. The server now refuses that, both when adding and at sign-in. Each refusal has a test that fails when the check is removed (mutation-tested). The first version of the sign-in test didn't prove it, because Chrome refused first; it was rewritten.
+- Adding or removing a passkey needs a recent sign-in, and writes an activity-log entry and an email notice. Passkeys go with the account at the purge.
+- **Not checked:** real phones, Windows Hello or a real fingerprint reader. All tests use Chrome's virtual device. **To try on real devices once there's a staging address.**
+- **Passkeys belong to the web address.** Moving the app to another domain later would stop every existing passkey working, so **the final domain should be settled before launch.** "Fintrack" is still a working name.
+- **Noted, not built:** 2FA has a backend but no screens. Stage 1 lists it as a Should and Stage 2 lists its journey as critical. The export doesn't yet list a user's passkey names.
 
 ### Added on 4 Nov 2026 (late evening): CSV import
 
@@ -184,6 +204,9 @@ At 360 px wide there's no horizontal scrolling on the dashboard or the add-trans
 | T-46 | **A transfer can be suggested two ways:** another account named as a whole word (4+ letters) in the description, or an opposite income or expense on another account within 3 days. Accepting the second turns that entry into the one transfer, and undo restores it | BR-16.5: never income plus expense. | Moderate |
 | T-47 | **Suggested transfers and possible duplicates need a decision; nothing is applied silently.** The second side of an existing transfer is linked by default, but it's shown and can be changed | M-5, GT-09. | Easy |
 | T-48 | **"Uncategorized" and "Uncategorized income" are created the first time they're needed** | FR-05 line on imports; workspaces that never import don't see them. | Easy |
+| T-49 | **Browser tests use the installed Chrome**, not a downloaded browser, on a dev server at port 3100, and need `npm run dev:all` stopped. Playwright 1.64.1, axe 4.14.0 | Nothing extra to download. CI will need its own browser. | Easy |
+| T-50 | **@better-auth/passkey 1.7.11, with @better-auth/core, better-call and @better-fetch/fetch pinned to match better-auth 1.7.11.** It adds @simplewebauthn to the dependency list (Annex L item 7) | npm otherwise picks newer, incompatible versions. | Easy |
+| T-51 | **Passkey sessions follow the normal idle limit** (30 minutes); "Keep me signed in" is offered with the password only | The safer default. Easy to extend. | Easy |
 | T-31 | **Lifecycle rules as written in §9.3:** only a posted transaction can be edited, voided or deleted; voided and deleted ones can only be restored. Restoring re-checks the ledger rules (for example an archived account, LR-14), and a deleted transaction older than 30 days can't be restored | Follows the approved lifecycle table exactly. | — |
 
 ---

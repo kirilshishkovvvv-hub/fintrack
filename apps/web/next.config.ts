@@ -27,7 +27,7 @@ const config: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   transpilePackages: ['@fintrack/api', '@fintrack/db', '@fintrack/domain'],
-  serverExternalPackages: ['@node-rs/argon2', 'pg', 'embedded-postgres', 'better-auth'],
+  serverExternalPackages: ['@node-rs/argon2', 'pg', 'embedded-postgres', 'better-auth', '@better-auth/passkey'],
   async headers() {
     return [
       {

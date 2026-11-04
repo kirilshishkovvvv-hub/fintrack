@@ -23,7 +23,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'desktop', use: { viewport: { width: 1280, height: 800 } } },
-    { name: 'phone', use: { viewport: { width: 360, height: 780 } } },
+    // The phone run also covers the dark theme, so both themes get the contrast checks.
+    { name: 'phone', use: { viewport: { width: 360, height: 780 }, colorScheme: 'dark' } },
   ],
   webServer: {
     command: 'node scripts/e2e-server.ts',

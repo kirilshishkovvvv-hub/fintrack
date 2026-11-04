@@ -8,6 +8,7 @@ import { AppShell } from '@/components/AppShell';
 export default function SettingsPage() {
   const t = useTranslations('settings');
   const items = [
+    { href: '/settings/passkeys', title: t('passkeys'), hint: t('passkeysHint') },
     { href: '/export', title: t('export'), hint: t('exportHint') },
     { href: '/audit', title: t('audit'), hint: t('auditHint') },
     { href: '/delete-account', title: t('delete'), hint: t('deleteHint') },

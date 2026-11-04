@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { api, ApiProblem } from '@/lib/api';
+import { cancelledByUser, passkeysSupported, signInWithPasskey } from '@/lib/passkeys';
 
 function SignInForm() {
   const t = useTranslations('signIn');
@@ -12,6 +13,8 @@ function SignInForm() {
   const verified = useSearchParams().get('verified') === '1';
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [canUsePasskey, setCanUsePasskey] = useState(false);
+  useEffect(() => setCanUsePasskey(passkeysSupported()), []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -26,6 +29,18 @@ function SignInForm() {
     } catch (problem) {
       const status = problem instanceof ApiProblem ? problem.status : 0;
       setError(status === 403 ? t('unverified') : status === 429 ? t('tooMany') : t('invalid'));
+      setBusy(false);
+    }
+  }
+
+  async function passkey() {
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithPasskey();
+      router.replace('/dashboard');
+    } catch (problem) {
+      if (!cancelledByUser(problem)) setError(problem instanceof ApiProblem && problem.status === 429 ? t('tooMany') : t('passkeyFailed'));
       setBusy(false);
     }
   }
@@ -59,6 +74,11 @@ function SignInForm() {
           {t('submit')}
         </button>
       </form>
+      {canUsePasskey && (
+        <button className="btn" type="button" disabled={busy} style={{ marginTop: '0.75rem', width: '100%' }} onClick={() => void passkey()}>
+          {t('passkey')}
+        </button>
+      )}
       <p className="small muted" style={{ marginTop: '1rem' }}>
         {t('noAccount')} <Link href="/sign-up">{t('createAccount')}</Link>
       </p>

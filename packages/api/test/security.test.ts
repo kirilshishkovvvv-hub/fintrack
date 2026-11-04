@@ -216,6 +216,7 @@ describe('account deletion (§8.6, GAP-5, AC-01.6)', () => {
     const before = (await bystander.call('GET', '/api/v1/summary')).body;
     const userId = (await sql('SELECT id FROM auth."user" WHERE email = $1', [email])).rows[0].id;
     const workspaceId = (await sql('SELECT workspace_id FROM fin.memberships WHERE user_id = $1', [userId])).rows[0].workspace_id;
+    await sql(`INSERT INTO auth.passkey (id, "publicKey", "userId", "credentialID", counter, "deviceType", "backedUp") VALUES ('pk-' || $1, 'x', $1, 'cred-' || $1, 0, 'singleDevice', false)`, [userId]);
     await request(client);
 
     // Six days in: nothing happens yet, and the user can still cancel.
@@ -235,6 +236,7 @@ describe('account deletion (§8.6, GAP-5, AC-01.6)', () => {
     expect((await sql('SELECT 1 FROM auth."user" WHERE id = $1', [userId])).rowCount).toBe(0);
     expect((await sql('SELECT 1 FROM auth.session WHERE "userId" = $1', [userId])).rowCount).toBe(0);
     expect((await sql('SELECT 1 FROM auth.account WHERE "userId" = $1', [userId])).rowCount).toBe(0);
+    expect((await sql('SELECT 1 FROM auth.passkey WHERE "userId" = $1', [userId])).rowCount).toBe(0);
     expect((await sql('SELECT 1 FROM fin.accounts WHERE ledger_account_id = $1', [account])).rowCount).toBe(0);
 
     const tombstone = (await sql('SELECT name, status, timezone FROM fin.workspaces WHERE id = $1', [workspaceId])).rows[0];

@@ -2,9 +2,10 @@
  * Authentication with Better Auth (AD-04), configured to FR-01 and Stage 2 §8.1–8.2.
  * Users, sessions and credentials live in our own database, in the `auth` schema.
  */
+import { passkey } from '@better-auth/passkey';
 import { hash, verify, type Options as Argon2Options } from '@node-rs/argon2';
 import { betterAuth } from 'better-auth';
-import { APIError, createAuthMiddleware } from 'better-auth/api';
+import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { haveIBeenPwned, twoFactor } from 'better-auth/plugins';
 import type pg from 'pg';
 import { recordAuditEvent, recordConsents, withUser } from '@fintrack/db';
@@ -32,7 +33,7 @@ export const FRESH_SESSION_SECONDS = 10 * 60;
 
 export interface OutgoingEmail {
   to: string;
-  kind: 'verify-email' | 'reset-password' | 'deletion-requested';
+  kind: 'verify-email' | 'reset-password' | 'deletion-requested' | 'passkey-added' | 'passkey-removed';
   url: string;
 }
 
@@ -74,7 +75,7 @@ export interface AuthDependencies {
   /** Stores the sign-up consents of a newly created user (Annex L item 6). */
   recordConsents: (userId: string, consents: SignUpConsents) => Promise<void>;
   /** Stores sign-ins and failed sign-ins in the audit log (FR-19). */
-  recordSecurityEvent: (userId: string, type: 'auth.login' | 'auth.login_failed') => Promise<void>;
+  recordSecurityEvent: (userId: string, type: 'auth.login' | 'auth.login_failed' | 'auth.passkey_added' | 'auth.passkey_removed') => Promise<void>;
 }
 
 export function createAuth(deps: AuthDependencies) {
@@ -126,6 +127,7 @@ export function createAuth(deps: AuthDependencies) {
         '/sign-up/email': { window: 60 * 60, max: 10 },
         '/request-password-reset': { window: 60 * 60, max: 5 },
         '/two-factor/*': { window: 15 * 60, max: 10 },
+        '/passkey/verify-authentication': { window: 15 * 60, max: 10 },
       },
     },
     advanced: {
@@ -137,6 +139,13 @@ export function createAuth(deps: AuthDependencies) {
       // (Annex L items 6 and 17). Checked before anything else, so the answer reveals nothing
       // about whether the email is registered (AC-01.2).
       before: createAuthMiddleware(async (ctx) => {
+        // BR-01.5: like adding one, removing a passkey needs a recent sign-in. Better Auth checks the adding.
+        if (ctx.path === '/passkey/delete-passkey') {
+          const session = await getSessionFromCtx(ctx);
+          if (session && Date.now() - new Date(session.session.createdAt).getTime() > FRESH_SESSION_SECONDS * 1000) {
+            throw new APIError('FORBIDDEN', { message: 'Confirm it is you first', code: 'REAUTH_REQUIRED' });
+          }
+        }
         if (ctx.path === '/sign-up/email' && !readConsents(ctx.body)) {
           throw new APIError('BAD_REQUEST', { message: 'Accept the terms and privacy notice, and confirm you are 18 or older' });
         }
@@ -151,9 +160,21 @@ export function createAuth(deps: AuthDependencies) {
         }
       }),
       after: createAuthMiddleware(async (ctx) => {
+        const returned = ctx.context.returned;
+        if (ctx.path === '/passkey/verify-authentication' && ctx.context.newSession) {
+          await deps.recordSecurityEvent(ctx.context.newSession.user.id, 'auth.login');
+        }
+        // A new way into the account gets a record and a notice, so a stolen session can't add one quietly.
+        if ((ctx.path === '/passkey/verify-registration' || ctx.path === '/passkey/delete-passkey') && !(returned instanceof APIError)) {
+          const session = await getSessionFromCtx(ctx);
+          if (session) {
+            const added = ctx.path === '/passkey/verify-registration';
+            await deps.recordSecurityEvent(session.user.id, added ? 'auth.passkey_added' : 'auth.passkey_removed');
+            await deps.sendEmail({ to: session.user.email, kind: added ? 'passkey-added' : 'passkey-removed', url: `${deps.baseURL}/settings/passkeys` });
+          }
+        }
         if (ctx.path !== '/sign-in/email') return;
         const email = emailOf(ctx.body);
-        const returned = ctx.context.returned;
         if (returned instanceof APIError && returned.statusCode === 401) {
           await throttle.recordFailure(email);
           const user = await deps.pool.query<{ id: string }>('SELECT id FROM auth."user" WHERE lower(email) = lower($1)', [email.trim()]);
@@ -189,6 +210,28 @@ export function createAuth(deps: AuthDependencies) {
     plugins: [
       twoFactor({ issuer: 'Fintrack' }),
       haveIBeenPwned({ enabled: deps.checkBreachedPasswords }),
+      passkey({
+        rpID: new URL(deps.baseURL).hostname,
+        rpName: 'Fintrack',
+        origin: new URL(deps.baseURL).origin,
+        authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+        // The plugin itself doesn't insist on the face, finger or PIN check. A passkey stands in for
+        // the password, so a key that was only tapped must not be enough, here or at sign-in.
+        registration: {
+          afterVerification: async ({ verification }) => {
+            if (!verification.registrationInfo?.userVerified) {
+              throw new APIError('BAD_REQUEST', { message: 'This authenticator cannot check who is using it' });
+            }
+          },
+        },
+        authentication: {
+          afterVerification: async ({ verification }) => {
+            if (!verification.authenticationInfo.userVerified) {
+              throw new APIError('UNAUTHORIZED', { message: 'The device did not check who is using it' });
+            }
+          },
+        },
+      }),
     ],
   });
 }

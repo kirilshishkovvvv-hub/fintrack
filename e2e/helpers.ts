@@ -15,13 +15,14 @@ export const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/
 
 /** Each test comes from its own address, so the per-source sign-in limit doesn't join up across tests. */
 export const test = base.extend({
-  context: async ({ browser, baseURL, viewport, timezoneId, locale, acceptDownloads }, use) => {
+  context: async ({ browser, baseURL, viewport, timezoneId, locale, acceptDownloads, colorScheme }, use) => {
     const context = await browser.newContext({
       baseURL: baseURL!,
       viewport,
       timezoneId: timezoneId!,
       locale: locale!,
       acceptDownloads: acceptDownloads!,
+      colorScheme,
       extraHTTPHeaders: { 'x-forwarded-for': `10.9.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}` },
     });
     await use(context);
@@ -83,7 +84,7 @@ export async function signIn(page: Page, email: string, password = PASSWORD): Pr
   await page.goto('/sign-in');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 }
 
 /** No sideways scrolling at any width (FR-21). */

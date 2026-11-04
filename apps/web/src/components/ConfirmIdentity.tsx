@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { api, ApiProblem } from '@/lib/api';
+import { cancelledByUser, passkeysSupported, signInWithPasskey } from '@/lib/passkeys';
 
 /** Asks for the password again before a sensitive action (BR-01.5, AC-01.6). A correct one starts a fresh session. */
 export function ConfirmIdentity({ onConfirmed }: { onConfirmed: () => void | Promise<void> }) {
@@ -10,6 +11,8 @@ export function ConfirmIdentity({ onConfirmed }: { onConfirmed: () => void | Pro
   const tApp = useTranslations('app');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [canUsePasskey, setCanUsePasskey] = useState(false);
+  useEffect(() => setCanUsePasskey(passkeysSupported()), []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -22,6 +25,19 @@ export function ConfirmIdentity({ onConfirmed }: { onConfirmed: () => void | Pro
     } catch (problem) {
       const status = problem instanceof ApiProblem ? problem.status : 0;
       setError(status === 401 || status === 403 ? t('invalid') : status === 429 ? t('tooMany') : tApp('genericError'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function usePasskey() {
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithPasskey();
+      await onConfirmed();
+    } catch (problem) {
+      if (!cancelledByUser(problem)) setError(t('passkeyFailed'));
     } finally {
       setBusy(false);
     }
@@ -46,6 +62,11 @@ export function ConfirmIdentity({ onConfirmed }: { onConfirmed: () => void | Pro
       <button className="btn btn-primary" type="submit" disabled={busy}>
         {t('submit')}
       </button>
+      {canUsePasskey && (
+        <button className="btn" type="button" disabled={busy} onClick={() => void usePasskey()}>
+          {t('usePasskey')}
+        </button>
+      )}
     </form>
   );
 }
