@@ -1,12 +1,14 @@
 # Progress log
 
+The dated history of the work. For the current state, see [PROGRESS.md](../PROGRESS.md); for decisions, [DECISIONS.md](../DECISIONS.md).
+
 The running record of implementation work: what was built, what was verified, and every technical choice made inside the approved design (Stage 1 spec and Stage 2 architecture). Anything that would change an approved rule or decision is **not** made here. It goes to you for approval first.
 
 ---
 
 ## Stage 4 · Core application (3 to 4 Nov 2026)
 
-**Status: built.** Every item below is done, apart from the limits listed in each section. Exit criteria (Stage 1 §12): GT-40 to GT-45 pass, export works, usable at 360 px. AC-17.4 (re-importing an export) is a Should and isn't built.
+**Status: not finished (corrected 4 Nov 2026).** The items below are done, apart from the limits in each section, but this list left out approved Must items. Password reset, 2FA screens, refund and split entry, search and settings are among them: see "Missing from Stage 4" in [PROGRESS.md](../PROGRESS.md). The exit criteria GT-40 to GT-45 and usable at 360 px are met; "export round-trip" isn't (decision D-2).
 
 ### Summary
 

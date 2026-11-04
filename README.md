@@ -1,6 +1,8 @@
 # Fintrack (working name)
 
-A multi-user personal finance tracker. The specification lives in `docs/`:
+A multi-user personal finance tracker.
+
+**Start here:** [PROGRESS.md](PROGRESS.md) (current state and next steps), [PROJECT_SPEC.md](PROJECT_SPEC.md), [DECISIONS.md](DECISIONS.md), [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md). The full documents are in `docs/`:
 
 - `docs/stage-1-specification.md` — requirements, accounting rules, golden tests (the source of truth for every financial rule)
 - `docs/stage-2-architecture.md` — architecture and technical design
