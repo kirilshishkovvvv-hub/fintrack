@@ -36,6 +36,8 @@
     "email": "Email",
     "password": "Password",
     "submit": "Sign in",
+    "keep": "Keep me signed in",
+    "keepHint": "For 14 days of inactivity instead of 30 minutes. Only on a device that's yours.",
     "noAccount": "New here?",
     "createAccount": "Create an account",
     "verified": "Your email is verified. Sign in to continue.",
@@ -168,7 +170,7 @@
     "title": "Accounts",
     "add": "Add account",
     "categories": "Categories",
-    "export": "Export my data",
+    "settings": "Your data and privacy",
     "archived": "Archived"
   },
   "account": {
@@ -259,17 +261,77 @@
     "merged": "{from} was merged into {into}.",
     "cancel": "Cancel"
   },
+  "settings": {
+    "title": "Your data and privacy",
+    "export": "Export my data",
+    "exportHint": "Download a copy of everything you've entered.",
+    "audit": "Activity log",
+    "auditHint": "Sign-ins and changes to your account. Never amounts.",
+    "delete": "Delete my account",
+    "deleteHint": "Remove your account and all your data."
+  },
+  "audit": {
+    "title": "Activity log",
+    "intro": "Sign-ins and changes made to your account. It shows what happened and when, never amounts or descriptions.",
+    "empty": "Nothing recorded yet.",
+    "more": "Show older",
+    "events": {
+      "auth_login": "Signed in",
+      "auth_login_failed": "Failed sign-in attempt",
+      "workspace_created": "Money space created",
+      "account_created": "Account added",
+      "account_archived": "Account archived",
+      "account_unarchived": "Account unarchived",
+      "account_deletion_requested": "Account deletion requested",
+      "account_deletion_cancelled": "Account deletion cancelled",
+      "category_created": "Category added",
+      "category_archived": "Category archived",
+      "category_unarchived": "Category unarchived",
+      "category_merged": "Categories merged",
+      "transaction_created": "Transaction added",
+      "transaction_edited": "Transaction edited",
+      "transaction_voided": "Transaction voided",
+      "transaction_trashed": "Transaction deleted",
+      "transaction_restored": "Transaction restored",
+      "transaction_undone": "Action undone",
+      "transaction_purged": "Deleted transaction removed for good",
+      "transaction_refund_link_cleared": "Refund's link to a removed purchase cleared",
+      "reconciliation_completed": "Account reconciled",
+      "reconciliation_unlocked": "Reconciliation unlocked",
+      "export_created": "Data exported"
+    },
+    "other": "Other activity"
+  },
+  "deleteAccount": {
+    "title": "Delete my account",
+    "intro": "This removes your account and all your data: accounts, transactions, history and reconciliations.",
+    "steps": "You'll be signed out everywhere. You then have 7 days to change your mind by signing in again. After that, everything is erased, and it can't be recovered. Backups age out within 35 days.",
+    "exportFirst": "You may want to download your data first.",
+    "exportLink": "Export my data",
+    "understand": "I understand my data will be erased after 7 days",
+    "submit": "Delete my account",
+    "cancel": "Keep my account",
+    "scheduled": "Your account is scheduled for deletion",
+    "scheduledBody": "Everything will be erased on {date}. Until then, you can keep your account or download your data.",
+    "requestedBody": "You've been signed out. Everything will be erased on {date}. To change your mind before then, sign in again.",
+    "signIn": "Sign in",
+    "kept": "Your account is safe. Nothing was deleted.",
+    "home": "Go to home"
+  },
+  "confirmIdentity": {
+    "prompt": "For your security, confirm it's you to continue.",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Confirm",
+    "invalid": "That email and password don't match.",
+    "tooMany": "Too many attempts. Wait a few minutes and try again."
+  },
   "export": {
     "title": "Export my data",
     "intro": "Download a copy of everything you've entered: accounts, categories, transactions with their history, and reconciliations. It's a ZIP with CSV files for spreadsheets and one JSON file.",
     "warning": "The file isn't encrypted. Keep it somewhere safe.",
     "download": "Download my data",
-    "done": "Your download has started.",
-    "reauth": "For your security, confirm it's you before downloading.",
-    "email": "Email",
-    "password": "Password",
-    "confirm": "Confirm and download",
-    "invalid": "That email and password don't match."
+    "done": "Your download has started."
   },
   "trash": {
     "title": "Recently deleted",

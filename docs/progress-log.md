@@ -18,12 +18,35 @@ The running record of implementation work: what was built, what was verified, an
 | Edit, void, delete to trash, restore and undo, with a version history per transaction; 30-day trash purge | ✅ Done, tested, checked in the browser |
 | Reconciliation with adjustments and locks, quick balance update, archive and merge (GT-40 to GT-42, GT-45) | ✅ Done, tested, checked in the browser |
 | Export of all data: CSV and JSON in a ZIP, with a recent sign-in required (FR-17) | ✅ Done, tested, checked in the browser |
-| Audit view | ⏳ Next |
-| "Keep me signed in", per-account login slowdown, account deletion | ⏳ Next |
+| Activity log (audit view), including sign-ins and failed sign-ins | ✅ Done, tested, checked in the browser |
+| "Keep me signed in" (14 idle days), per-account login slowdown | ✅ Done and tested |
+| Account deletion: request, 7-day cancel window, purge | ✅ Done and tested; request and cancel checked in the browser |
 | CSV import (moved here from Stage 7, AP-15) | ⏳ After the above |
 | End-to-end browser tests (Playwright) | ⏳ Next |
 
-**Test run (4 Nov 2026):** 182 passed, 11 todo, 0 failed. Both type checks clean.
+**Test run (4 Nov 2026, evening):** 195 passed, 11 todo, 0 failed. Both type checks clean.
+
+### Added on 4 Nov 2026 (evening): activity log, sessions, login slowdown, account deletion
+
+- **Activity log:** what happened and when, 50 at a time, never amounts or descriptions; another user's events never appear.
+- **Sessions (AD-14):** 30 idle minutes by default, 14 idle days only if "Keep me signed in" is ticked, and 30 days at most either way. Tested by aging sessions in the database.
+- **Login slowdown (BR-01.3, AC-01.5):** from the 5th failure within 15 minutes, every attempt must wait 30 seconds, doubling up to 15 minutes, even with the right password. An unregistered address behaves identically, and the table stores no addresses.
+- **Account deletion (§8.6, GAP-5, AC-01.6):**
+  - it needs a recent sign-in, offers the export first and requires a tick;
+  - every session ends, and a notice is emailed;
+  - for 7 days only cancelling, exporting and reading the status work;
+  - the purge then removes every row and the login, leaves other users' figures untouched, and frees the address.
+- **Checked in the browser:** the sign-in screen, the activity log, and deleting, signing back in and cancelling. **Not clicked through:** ticking "Keep me signed in" (API tests only), and the purge (it has no screen).
+
+### Open points from this work
+
+1. **Nothing runs the purges on a schedule yet.** Both the 30-day trash purge and the deletion purge are tested functions waiting for the background worker (Stage 8). **They must be scheduled before launch**, or the promises shown on screen wouldn't be kept.
+2. **A user who never finished onboarding has no workspace and can't delete their account in the app.** To fix with the deletion route or manual requests (Annex L item 20) before launch.
+3. **Audit log retention (24 months, PRV-06)** isn't implemented; it joins the worker.
+4. **For the lawyer (LQ-08):**
+   - consent records are erased with the account, though proof of consent may need keeping for a time;
+   - the kept audit trail holds a random user ID that no longer leads to anyone, which I treat as not personal data;
+   - the deletion notice needs final email wording.
 
 ### Added on 4 Nov 2026: browser check of reconciliation, and export
 
@@ -119,6 +142,11 @@ At 360 px wide there's no horizontal scrolling on the dashboard or the add-trans
 | T-35 | **Local PostgreSQL clusters are UTF-8** (`--encoding=UTF8 --locale=C`), and migrations refuse a non-UTF-8 database | Found while testing: on this machine initdb picked WIN1251, which can't store Greek or emoji. **The existing local dev cluster (`.pgdata/cluster`) is WIN1251 and must be recreated** before `npm run dev:all` starts again; it holds only test data. | — |
 | T-36 | **The ZIP is written by a small function using Node's built-in compression**, with no new dependency | Fewer third-party packages (Annex L item 7). Checked with Windows' and Info-ZIP's unzip. | Easy |
 | T-37 | **"Recent sign-in" is measured from when the session signed in**, not from Better Auth's own freshness check | Sessions slide with activity, so the time of the last refresh wouldn't prove the user recently entered a password. | Easy |
+| T-38 | **Idle limits are enforced by our own check against a new `lastActiveAt` session column.** Better Auth has one expiry for all sessions, and slides it before returning the session. Without "keep me signed in", the cookie also ends when the browser closes | Refines T-10; the approved limits (AD-14) are unchanged. | Moderate |
+| T-39 | **The login slowdown is a delay, capped at 15 minutes, keyed by an HMAC of the email.** The per-source limit stays as in T-11 | A permanent lock would let anyone shut a person out. | Easy |
+| T-40 | **The purge sets the target workspace and uses the existing row-level security**, as `fin_maintenance` with delete rights (migration 0006). A row with no personal data stays as the audit trail's reference | No role can delete across workspaces in one statement; a test proves it. | Moderate |
+| T-41 | **Resolves T-18: `memberships.user_id` stays without a foreign key to the auth user.** The purge removes them in order, and a test checks nothing is left | Keeps the auth and financial schemas independent. | Easy |
+| T-42 | **"Your data and privacy" page** groups export, activity log and deletion; it's reached from Accounts | Makes the rights in Annex L easy to find. | Easy |
 | T-31 | **Lifecycle rules as written in §9.3:** only a posted transaction can be edited, voided or deleted; voided and deleted ones can only be restored. Restoring re-checks the ledger rules (for example an archived account, LR-14), and a deleted transaction older than 30 days can't be restored | Follows the approved lifecycle table exactly. | — |
 
 ---

@@ -5,7 +5,7 @@
  */
 import pg from 'pg';
 import { z } from 'zod';
-import { createApp, createAuth, createConsentRecorder, type Auth, type OutgoingEmail } from '@fintrack/api';
+import { createApp, createAuth, createConsentRecorder, createSecurityEventRecorder, type Auth, type OutgoingEmail } from '@fintrack/api';
 
 const env = z
   .object({
@@ -41,11 +41,13 @@ function build(): ServerApp {
     checkBreachedPasswords: env.NODE_ENV === 'production',
     secureCookies: env.APP_ORIGIN.startsWith('https://'),
     recordConsents: createConsentRecorder(pool),
+    recordSecurityEvent: createSecurityEventRecorder(pool),
   });
   const handle = createApp({
     pool,
     auth,
     allowedOrigin: new URL(env.APP_ORIGIN).origin,
+    sendEmail: logEmail,
     reportError: (error, reference) => console.error(`[error ${reference}]`, error),
   });
   return { handle, auth };

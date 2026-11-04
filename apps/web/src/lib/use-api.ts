@@ -111,6 +111,7 @@ export function useApiData<T>(load: () => Promise<T>) {
     } catch (problem) {
       if (problem instanceof ApiProblem && problem.status === 401) return router.replace('/sign-in');
       if (problem instanceof ApiProblem && problem.code === 'NO_WORKSPACE') return router.replace('/onboarding');
+      if (problem instanceof ApiProblem && problem.code === 'DELETION_PENDING') return router.replace('/delete-account');
       setFailed(true);
     }
     // `load` is defined inline by callers; reloading only on mount is intended.

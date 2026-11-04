@@ -1,5 +1,6 @@
 export * from './consent-store.ts';
 export * from './context.ts';
+export * from './deletion-store.ts';
 export * from './ids.ts';
 export * from './ledger-store.ts';
 export * from './lifecycle-store.ts';

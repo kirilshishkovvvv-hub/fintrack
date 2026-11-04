@@ -17,6 +17,7 @@ import {
 import {
   changeTransactionStatus,
   createWorkspace,
+  DELETION_WINDOW_DAYS,
   findUndoableVersion,
   getWorkspace,
   insertLedgerAccount,
@@ -110,6 +111,11 @@ export function workspaceDto(workspace: WorkspaceRow) {
     currency: workspace.currency,
     timezone: workspace.timezone,
     protectedReserve_minor: workspace.protectedReserveMinor,
+    status: workspace.status,
+    /** When a requested deletion goes through (GAP-5). */
+    purgeAfter: workspace.deletionRequestedAt
+      ? new Date(Date.parse(workspace.deletionRequestedAt) + DELETION_WINDOW_DAYS * 86_400_000).toISOString()
+      : null,
   };
 }
 

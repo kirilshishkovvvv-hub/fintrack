@@ -8,6 +8,8 @@ export interface WorkspaceRow {
   currency: Currency;
   timezone: string;
   protectedReserveMinor: number;
+  status: 'active' | 'deletion_pending' | 'purged';
+  deletionRequestedAt: string | null;
 }
 
 /** The workspaces the current user belongs to (needs app.user_id; see withUser). */
@@ -27,7 +29,9 @@ export async function getWorkspace(db: Db, workspaceId: string): Promise<Workspa
     currency: Currency;
     timezone: string;
     protected_reserve_minor: string;
-  }>('SELECT id, name, currency, timezone, protected_reserve_minor::text FROM fin.workspaces WHERE id = $1', [workspaceId]);
+    status: WorkspaceRow['status'];
+    deletion_requested_at: Date | null;
+  }>('SELECT id, name, currency, timezone, protected_reserve_minor::text, status, deletion_requested_at FROM fin.workspaces WHERE id = $1', [workspaceId]);
   const row = result.rows[0];
   if (!row) throw new Error('No workspace in the current context');
   return {
@@ -36,6 +40,8 @@ export async function getWorkspace(db: Db, workspaceId: string): Promise<Workspa
     currency: row.currency,
     timezone: row.timezone,
     protectedReserveMinor: Number(row.protected_reserve_minor),
+    status: row.status,
+    deletionRequestedAt: row.deletion_requested_at?.toISOString() ?? null,
   };
 }
 
@@ -49,6 +55,28 @@ export async function recordAuditEvent(
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [uuidv7(), event.workspaceId, event.userId, event.type, event.objectType ?? null, event.objectId ?? null],
   );
+}
+
+export interface AuditEntry {
+  id: string;
+  type: string;
+  objectType: string | null;
+  objectId: string | null;
+  occurredAt: string;
+}
+
+/** The user-visible audit view (FR-19): this workspace's events and the user's own sign-ins, newest first. */
+export async function listAuditEvents(
+  db: Db,
+  scope: { workspaceId: string; userId: string; before?: string | undefined; limit: number },
+): Promise<AuditEntry[]> {
+  const result = await db.query<{ id: string; event_type: string; object_type: string | null; object_id: string | null; occurred_at: Date }>(
+    `SELECT id, event_type, object_type, object_id, occurred_at FROM fin.audit_events
+      WHERE (workspace_id = $1 OR (workspace_id IS NULL AND user_id = $2)) AND ($3::uuid IS NULL OR id < $3)
+      ORDER BY id DESC LIMIT $4`,
+    [scope.workspaceId, scope.userId, scope.before ?? null, scope.limit],
+  );
+  return result.rows.map((row) => ({ id: row.id, type: row.event_type, objectType: row.object_type, objectId: row.object_id, occurredAt: row.occurred_at.toISOString() }));
 }
 
 export class IdempotencyConflict extends Error {

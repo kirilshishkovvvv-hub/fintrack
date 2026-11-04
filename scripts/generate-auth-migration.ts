@@ -26,6 +26,7 @@ try {
     checkBreachedPasswords: false,
     secureCookies: false,
     recordConsents: async () => undefined,
+    recordSecurityEvent: async () => undefined,
   });
   const { compileMigrations } = await getMigrations(auth.options);
   const sql = await compileMigrations();

@@ -35,8 +35,8 @@ export default function AccountsPage() {
         <Link href="/categories" className="btn">
           {t('categories')}
         </Link>
-        <Link href="/export" className="btn">
-          {t('export')}
+        <Link href="/settings" className="btn">
+          {t('settings')}
         </Link>
       </div>
       {data && archived.length > 0 && (

@@ -9,6 +9,7 @@ import { LedgerError } from '@fintrack/domain';
 import {
   getWorkspace,
   idempotent,
+  listAuditEvents,
   IdempotencyConflict,
   uuidv7,
   VersionConflict,
@@ -20,7 +21,8 @@ import {
 } from '@fintrack/db';
 import type pg from 'pg';
 import { ZodError, type z } from 'zod';
-import { FRESH_SESSION_SECONDS, SESSION_ABSOLUTE_SECONDS, type Auth } from './auth.ts';
+import { FRESH_SESSION_SECONDS, SESSION_ABSOLUTE_SECONDS, SESSION_IDLE_SECONDS, SESSION_KEEP_IDLE_SECONDS, type Auth, type OutgoingEmail } from './auth.ts';
+import * as deletion from './deletion.ts';
 import { buildExport } from './export.ts';
 import { ApiError, json, problem, readJson, readOptionalJson, requestHash, requiredVersion } from './http.ts';
 import * as catalog from './catalog.ts';
@@ -35,6 +37,8 @@ export interface AppDependencies {
   allowedOrigin: string;
   /** Reports unexpected errors (Sentry in production). Receives no request bodies. */
   reportError?: (error: unknown, reference: string) => void;
+  /** Sends security emails, here the notice of a deletion request. */
+  sendEmail?: (email: OutgoingEmail) => Promise<void>;
 }
 
 interface Call {
@@ -42,6 +46,7 @@ interface Call {
   url: URL;
   params: Record<string, string>;
   userId: string;
+  email: string;
   /** When this session signed in; sensitive actions need it to be recent (BR-01.5). */
   signedInAt: number;
 }
@@ -58,18 +63,41 @@ const UUID = '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})';
 
 export function createApp(deps: AppDependencies) {
   /** Runs work in the caller's workspace, which is always resolved on the server (Stage 2 §8.3). */
-  async function inWorkspace<T>(userId: string, work: (db: Db, context: RequestContext) => Promise<T>, write = false): Promise<T> {
+  async function inWorkspace<T>(
+    userId: string,
+    work: (db: Db, context: RequestContext) => Promise<T>,
+    write = false,
+    allowPendingDeletion = false,
+  ): Promise<T> {
     const [workspaceId] = await withUser(deps.pool, userId, (db) => workspaceIdsForUser(db, userId));
     if (!workspaceId) throw new ApiError(409, 'NO_WORKSPACE', 'Create your workspace first');
     const context = { workspaceId, userId };
-    return withWorkspace(deps.pool, context, (db) => work(db, context), { write });
+    return withWorkspace(
+      deps.pool,
+      context,
+      async (db) => {
+        // §8.6: during the cancel window, only cancelling, exporting and reading the status work.
+        if (!allowPendingDeletion && (await getWorkspace(db, workspaceId)).status !== 'active') {
+          throw new ApiError(409, 'DELETION_PENDING', 'This account is scheduled for deletion');
+        }
+        return work(db, context);
+      },
+      { write },
+    );
+  }
+
+  /** BR-01.5, AC-01.6: sensitive actions need a sign-in within the last 10 minutes. */
+  function requireFresh(call: Call) {
+    if (Date.now() - call.signedInAt > FRESH_SESSION_SECONDS * 1000) {
+      throw new ApiError(403, 'REAUTH_REQUIRED', 'Enter your password again to continue');
+    }
   }
 
   /** A state-changing call with a required Idempotency-Key (Stage 2 §7.5). */
   function idempotentWrite<S extends z.ZodType>(
     schema: S,
     run: (db: Db, context: RequestContext, input: z.infer<S>, call: Call) => Promise<unknown>,
-    options: { status?: number; optionalBody?: boolean } = {},
+    options: { status?: number; optionalBody?: boolean; allowPendingDeletion?: boolean } = {},
   ): Handler {
     return async (call) => {
       const key = call.request.headers.get('idempotency-key');
@@ -87,6 +115,7 @@ export function createApp(deps: AppDependencies) {
             body: await run(db, context, input, call),
           })),
         true,
+        options.allowPendingDeletion,
       );
       return json(result.status, result.body, result.replayed ? { 'idempotent-replayed': 'true' } : {});
     };
@@ -112,7 +141,7 @@ export function createApp(deps: AppDependencies) {
     {
       method: 'GET',
       pattern: /^\/api\/v1\/workspace$/,
-      handler: async (call) => json(200, services.workspaceDto(await inWorkspace(call.userId, (db, context) => getWorkspace(db, context.workspaceId)))),
+      handler: async (call) => json(200, services.workspaceDto(await inWorkspace(call.userId, (db, context) => getWorkspace(db, context.workspaceId), false, true))),
     },
     {
       method: 'GET',
@@ -215,13 +244,41 @@ export function createApp(deps: AppDependencies) {
     },
     {
       method: 'POST',
+      pattern: /^\/api\/v1\/workspace\/deletion$/,
+      handler: async (call) => {
+        requireFresh(call);
+        const response = await idempotentWrite(schemas.emptyBody, (db, context) => deletion.requestDeletion(db, context), { ...ACTION, allowPendingDeletion: true })(call);
+        // §8.6: every session ends. The user signs in again to cancel, and hears about it by email.
+        const context = await deps.auth.$context;
+        await context.internalAdapter.deleteUserSessions(call.userId);
+        await deps.sendEmail?.({ to: call.email, kind: 'deletion-requested', url: `${deps.allowedOrigin}/delete-account` });
+        return response;
+      },
+    },
+    {
+      method: 'POST',
+      pattern: /^\/api\/v1\/workspace\/deletion\/cancel$/,
+      handler: async (call) => {
+        requireFresh(call);
+        return idempotentWrite(schemas.emptyBody, (db, context) => deletion.cancelDeletion(db, context), { ...ACTION, allowPendingDeletion: true })(call);
+      },
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/audit$/,
+      handler: async (call) => {
+        const query = schemas.auditQuery.parse(Object.fromEntries(call.url.searchParams));
+        const limit = 50;
+        const items = await inWorkspace(call.userId, (db, context) => listAuditEvents(db, { ...context, before: query.before, limit: limit + 1 }));
+        return json(200, { items: items.slice(0, limit), nextBefore: items.length > limit ? items[limit - 1]!.id : null });
+      },
+    },
+    {
+      method: 'POST',
       pattern: /^\/api\/v1\/exports$/,
       handler: async (call) => {
-        // Fresh (BR-01.5): a stolen or forgotten session alone can't take all the data away.
-        if (Date.now() - call.signedInAt > FRESH_SESSION_SECONDS * 1000) {
-          throw new ApiError(403, 'REAUTH_REQUIRED', 'Enter your password again to export your data');
-        }
-        const { filename, zip } = await inWorkspace(call.userId, buildExport, true);
+        requireFresh(call);
+        const { filename, zip } = await inWorkspace(call.userId, buildExport, true, true);
         return new Response(new Uint8Array(zip), {
           status: 200,
           headers: {
@@ -253,7 +310,7 @@ export function createApp(deps: AppDependencies) {
    * the 30-minute idle expiry forward (AD-14); they must reach the browser, or its cookie would
    * still expire 30 minutes after sign-in, however active the user is.
    */
-  async function authenticate(request: Request): Promise<{ userId: string; signedInAt: number; refreshed: string[] }> {
+  async function authenticate(request: Request): Promise<{ userId: string; email: string; signedInAt: number; refreshed: string[] }> {
     const { headers, response: result } = await deps.auth.api.getSession({ headers: request.headers, returnHeaders: true });
     if (!result) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue');
     // AC-01.1: an unverified account can't read or write any financial data.
@@ -264,7 +321,17 @@ export function createApp(deps: AppDependencies) {
       await deps.auth.api.revokeSession({ headers: request.headers, body: { token: result.session.token } }).catch(() => undefined);
       throw new ApiError(401, 'UNAUTHENTICATED', 'Your session has ended. Sign in again');
     }
-    return { userId: result.user.id, signedInAt: new Date(result.session.createdAt).getTime(), refreshed: headers.getSetCookie() };
+    // AD-14: the idle limit of this session. Checked against our own column, because Better Auth
+    // has already slid its expiry by the time it returns the session.
+    const lastActive = new Date(result.session.lastActiveAt ?? result.session.createdAt).getTime();
+    const idleLimit = result.session.keepSignedIn ? SESSION_KEEP_IDLE_SECONDS : SESSION_IDLE_SECONDS;
+    const context = await deps.auth.$context;
+    if (Date.now() - lastActive > idleLimit * 1000) {
+      await context.internalAdapter.deleteSession(result.session.token);
+      throw new ApiError(401, 'UNAUTHENTICATED', 'Your session has ended. Sign in again');
+    }
+    if (Date.now() - lastActive > 60_000) await context.internalAdapter.updateSession(result.session.token, { lastActiveAt: new Date() });
+    return { userId: result.user.id, email: result.user.email, signedInAt: new Date(result.session.createdAt).getTime(), refreshed: headers.getSetCookie() };
   }
 
   async function dispatch(request: Request, url: URL): Promise<Response> {
@@ -277,11 +344,11 @@ export function createApp(deps: AppDependencies) {
     if (request.method !== 'GET' && request.headers.get('origin') !== deps.allowedOrigin) {
       throw new ApiError(403, 'FORBIDDEN_ORIGIN', 'Requests must come from the app');
     }
-    const { userId, signedInAt, refreshed } = await authenticate(request);
+    const { userId, email, signedInAt, refreshed } = await authenticate(request);
     const match = route.pattern.exec(url.pathname);
     const params: Record<string, string> = match?.[1] ? { id: match[1] } : {};
     try {
-      const response = await route.handler({ request, url, params, userId, signedInAt });
+      const response = await route.handler({ request, url, params, userId, email, signedInAt });
       for (const cookie of refreshed) response.headers.append('set-cookie', cookie);
       return response;
     } catch (error) {

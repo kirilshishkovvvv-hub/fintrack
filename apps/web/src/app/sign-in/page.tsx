@@ -20,7 +20,7 @@ function SignInForm() {
     setError(null);
     try {
       await api('POST', '/api/auth/sign-in/email', {
-        body: { email: String(form.get('email') ?? '').trim(), password: String(form.get('password') ?? ''), callbackURL: '/sign-in?verified=1' },
+        body: { email: String(form.get('email') ?? '').trim(), password: String(form.get('password') ?? ''), rememberMe: form.get('keep') === 'on', callbackURL: '/sign-in?verified=1' },
       });
       router.replace('/dashboard');
     } catch (problem) {
@@ -43,6 +43,13 @@ function SignInForm() {
           <label htmlFor="password">{t('password')}</label>
           <input id="password" name="password" type="password" autoComplete="current-password" required />
         </div>
+        <label className="check">
+          <input type="checkbox" name="keep" />
+          <span>
+            {t('keep')}
+            <span className="hint" style={{ display: 'block' }}>{t('keepHint')}</span>
+          </span>
+        </label>
         {error && (
           <p className="notice notice-error" role="alert">
             {error}

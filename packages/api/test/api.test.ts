@@ -96,23 +96,25 @@ describe('login (FR-01)', () => {
     }
   });
 
-  test('activity slides the 30-minute idle expiry forward, and the refreshed cookie reaches the browser (AD-14)', async () => {
-    const client = await verifiedUser(harness, 'sliding@example.com');
+  test('activity slides the session expiry forward, and the refreshed cookie reaches the browser (AD-14)', async () => {
+    await verifiedUser(harness, 'sliding@example.com');
+    const client = new Client(harness);
+    await client.call('POST', '/api/auth/sign-in/email', { body: { email: 'sliding@example.com', password: PASSWORD, rememberMe: true } });
     await client.call('POST', '/api/v1/workspaces', { body: { name: 'Personal', currency: 'EUR', timezone: 'Europe/Sofia' } });
-    // Ten minutes since the last refresh: past the 5-minute update age, so the next request slides it.
+    // A day since the last refresh: past the 5-minute update age, so the next request slides it.
     await harness.database.pool.query(
-      `UPDATE auth.session SET "expiresAt" = now() + interval '20 minutes'
+      `UPDATE auth.session SET "expiresAt" = now() + interval '13 days'
         WHERE "userId" = (SELECT id FROM auth."user" WHERE email = 'sliding@example.com')`,
     );
     const result = await client.call('GET', '/api/v1/workspace');
     expect(result.status).toBe(200);
     const cookie = result.headers.getSetCookie().find((header) => header.includes('session_token='));
-    expect(cookie).toMatch(/Max-Age=1800/i);
+    expect(cookie).toMatch(/Max-Age=1209600/i);
     const expiry = await harness.database.pool.query(
       `SELECT extract(epoch FROM "expiresAt" - now())::int AS seconds FROM auth.session
-        WHERE "userId" = (SELECT id FROM auth."user" WHERE email = 'sliding@example.com')`,
+        WHERE "keepSignedIn" AND "userId" = (SELECT id FROM auth."user" WHERE email = 'sliding@example.com')`,
     );
-    expect(expiry.rows[0].seconds).toBeGreaterThan(25 * 60);
+    expect(expiry.rows[0].seconds).toBeGreaterThan(13.5 * 24 * 60 * 60);
   });
 
   test('after signing out, the old session stops working at once (AC-01.4)', async () => {

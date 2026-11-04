@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { startTestDatabase, type TestDatabase } from '../../db/src/test-database.ts';
-import { createApp, createAuth, createConsentRecorder, type OutgoingEmail } from '../src/index.ts';
+import { createApp, createAuth, createConsentRecorder, createSecurityEventRecorder, type OutgoingEmail } from '../src/index.ts';
 
 export const CONSENTS = { terms: true, privacy: true, age18: true };
 
@@ -33,8 +33,16 @@ export async function startHarness(): Promise<Harness> {
     checkBreachedPasswords: false,
     secureCookies: false,
     recordConsents: createConsentRecorder(database.pool),
+    recordSecurityEvent: createSecurityEventRecorder(database.pool),
   });
-  const handle = createApp({ pool: database.pool, auth, allowedOrigin: ORIGIN });
+  const handle = createApp({
+    pool: database.pool,
+    auth,
+    allowedOrigin: ORIGIN,
+    sendEmail: async (email) => {
+      emails.push(email);
+    },
+  });
   return {
     database,
     handle,
@@ -67,7 +75,7 @@ export class Client {
     const setCookies = response.headers.getSetCookie();
     if (setCookies.length) this.storeCookies(setCookies);
     const text = await response.text();
-    const body = text ? (JSON.parse(text) as any) : null;
+    const body = text && response.headers.get('content-type')?.includes('json') ? (JSON.parse(text) as any) : null;
     return { status: response.status, body, headers: response.headers };
   }
 

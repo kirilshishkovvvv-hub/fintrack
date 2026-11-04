@@ -2,6 +2,7 @@ export { createApp, type AppDependencies } from './app.ts';
 export {
   createAuth,
   createConsentRecorder,
+  createSecurityEventRecorder,
   LEGAL_VERSIONS,
   type Auth,
   type AuthDependencies,

@@ -7,7 +7,8 @@ import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { haveIBeenPwned, twoFactor } from 'better-auth/plugins';
 import type pg from 'pg';
-import { recordConsents, withUser } from '@fintrack/db';
+import { recordAuditEvent, recordConsents, withUser } from '@fintrack/db';
+import { createLoginThrottle } from './login-throttle.ts';
 
 /** OWASP minimum for Argon2id: 19 MiB memory, 2 iterations, parallelism 1 (AD-04). */
 // `Algorithm` is a const enum, which isolated modules can't import; 2 is Algorithm.Argon2id.
@@ -18,15 +19,20 @@ const ARGON2ID: Argon2Options = {
   parallelism: 1,
 };
 
-/** BR-01.5 and AD-14: a session ends after 30 idle minutes, and in any case after 30 days. */
+/**
+ * BR-01.5 and AD-14: a session ends after 30 idle minutes, or 14 days with "keep me signed in",
+ * and in any case after 30 days. Better Auth has one expiry for all sessions, so it gets the longer
+ * one and createApp enforces the idle limit of each session (T-38).
+ */
 export const SESSION_IDLE_SECONDS = 30 * 60;
+export const SESSION_KEEP_IDLE_SECONDS = 14 * 24 * 60 * 60;
 export const SESSION_ABSOLUTE_SECONDS = 30 * 24 * 60 * 60;
 /** BR-01.5: sensitive actions need a sign-in within the last 10 minutes. */
 export const FRESH_SESSION_SECONDS = 10 * 60;
 
 export interface OutgoingEmail {
   to: string;
-  kind: 'verify-email' | 'reset-password';
+  kind: 'verify-email' | 'reset-password' | 'deletion-requested';
   url: string;
 }
 
@@ -67,9 +73,13 @@ export interface AuthDependencies {
   secureCookies: boolean;
   /** Stores the sign-up consents of a newly created user (Annex L item 6). */
   recordConsents: (userId: string, consents: SignUpConsents) => Promise<void>;
+  /** Stores sign-ins and failed sign-ins in the audit log (FR-19). */
+  recordSecurityEvent: (userId: string, type: 'auth.login' | 'auth.login_failed') => Promise<void>;
 }
 
 export function createAuth(deps: AuthDependencies) {
+  const throttle = createLoginThrottle(deps.pool, deps.secret);
+  const emailOf = (body: unknown) => String((body as { email?: unknown } | null)?.email ?? '');
   return betterAuth({
     appName: 'Fintrack',
     baseURL: deps.baseURL,
@@ -96,11 +106,15 @@ export function createAuth(deps: AuthDependencies) {
       sendVerificationEmail: async ({ user, url }) => deps.sendEmail({ to: user.email, kind: 'verify-email', url }),
     },
     session: {
-      expiresIn: SESSION_IDLE_SECONDS,
+      expiresIn: SESSION_KEEP_IDLE_SECONDS,
       updateAge: 5 * 60,
       freshAge: FRESH_SESSION_SECONDS,
       // No cookie cache: a revoked session must stop working on its next request (AC-01.4).
       cookieCache: { enabled: false },
+      additionalFields: {
+        keepSignedIn: { type: 'boolean', required: false, input: false },
+        lastActiveAt: { type: 'date', required: false, input: false },
+      },
     },
     rateLimit: {
       enabled: true,
@@ -126,9 +140,43 @@ export function createAuth(deps: AuthDependencies) {
         if (ctx.path === '/sign-up/email' && !readConsents(ctx.body)) {
           throw new APIError('BAD_REQUEST', { message: 'Accept the terms and privacy notice, and confirm you are 18 or older' });
         }
+        // BR-01.3: the same answer whether or not the address exists or the password is right.
+        if (ctx.path === '/sign-in/email') {
+          const wait = await throttle.waitSeconds(emailOf(ctx.body));
+          if (wait > 0) {
+            throw new APIError('TOO_MANY_REQUESTS', { message: 'Too many attempts. Wait and try again' }, { 'retry-after': String(wait) });
+          }
+          // Better Auth treats a missing rememberMe as true; here staying signed in must be asked for (AD-14).
+          return { context: { body: { ...ctx.body, rememberMe: (ctx.body as { rememberMe?: unknown } | undefined)?.rememberMe === true } } };
+        }
+      }),
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/sign-in/email') return;
+        const email = emailOf(ctx.body);
+        const returned = ctx.context.returned;
+        if (returned instanceof APIError && returned.statusCode === 401) {
+          await throttle.recordFailure(email);
+          const user = await deps.pool.query<{ id: string }>('SELECT id FROM auth."user" WHERE lower(email) = lower($1)', [email.trim()]);
+          if (user.rows[0]) await deps.recordSecurityEvent(user.rows[0].id, 'auth.login_failed');
+        } else if (ctx.context.newSession) {
+          await throttle.clear(email);
+          await deps.recordSecurityEvent(ctx.context.newSession.user.id, 'auth.login');
+        }
       }),
     },
     databaseHooks: {
+      session: {
+        create: {
+          // "Keep me signed in" is an explicit choice, never the default (AD-14). Without it the cookie
+          // lasts until the browser closes and Better Auth doesn't slide the expiry (it would stop at
+          // 1 day), so the row gets the absolute limit and createApp enforces the idle limit.
+          before: async (session, context) => {
+            const keepSignedIn = (context?.body as { rememberMe?: unknown } | undefined)?.rememberMe === true;
+            const expiresAt = keepSignedIn ? session.expiresAt : new Date(Date.now() + SESSION_ABSOLUTE_SECONDS * 1000);
+            return { data: { ...session, expiresAt, keepSignedIn, lastActiveAt: new Date() } };
+          },
+        },
+      },
       user: {
         create: {
           after: async (user, context) => {
@@ -146,6 +194,11 @@ export function createAuth(deps: AuthDependencies) {
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+/** Stores a security event in the audit log, under the user's own context. It has no workspace. */
+export function createSecurityEventRecorder(pool: pg.Pool): AuthDependencies['recordSecurityEvent'] {
+  return (userId, type) => withUser(pool, userId, (db) => recordAuditEvent(db, { workspaceId: null, userId, type }));
+}
 
 /** Stores sign-up consents in fin.consent_records, under the new user's own context. */
 export function createConsentRecorder(pool: pg.Pool): AuthDependencies['recordConsents'] {

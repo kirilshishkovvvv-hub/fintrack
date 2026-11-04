@@ -119,6 +119,8 @@ export const balanceUpdateBody = z.strictObject({
 
 export const mergeCategoryBody = z.strictObject({ intoId: id });
 
+export const auditQuery = z.strictObject({ before: id.optional() });
+
 export const reconciliationsQuery = z.strictObject({ accountId: id.optional() });
 
 export const periodQuery = z.strictObject({ from: isoDate, to: isoDate }).refine((p) => p.from <= p.to, 'from must not be after to');
