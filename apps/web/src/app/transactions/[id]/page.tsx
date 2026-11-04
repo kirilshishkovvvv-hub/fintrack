@@ -6,7 +6,7 @@ import { useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { AppShell } from '@/components/AppShell';
 import { signedMoney } from '@/components/TransactionRow';
-import { TransactionForm, valuesFrom } from '@/components/TransactionForm';
+import { TransactionForm, valuesFrom, type PayeeOption } from '@/components/TransactionForm';
 import { useUndo } from '@/components/UndoToast';
 import { api, ApiProblem, errorMessage, newIdempotencyKey } from '@/lib/api';
 import {
@@ -33,13 +33,14 @@ export default function TransactionDetailPage() {
   const [busy, setBusy] = useState(false);
   const key = useRef(newIdempotencyKey());
   const { data, failed } = useApiData(async () => {
-    const [tx, accounts, categories, summary] = await Promise.all([
+    const [tx, accounts, categories, summary, payees] = await Promise.all([
       api<TransactionDetail>('GET', `/api/v1/transactions/${id}`),
       loadAccounts(),
       loadCategories(),
       loadSummary(),
+      api<{ items: PayeeOption[] }>('GET', '/api/v1/payees').then((r) => r.items),
     ]);
-    return { tx, accounts, categories, currency: summary.currency };
+    return { tx, accounts, categories, currency: summary.currency, payees };
   });
 
   if (failed) {
@@ -129,6 +130,12 @@ export default function TransactionDetailPage() {
           <span className="muted">{t('accounts')}</span>
           <span>{ownNames.join(' → ')}</span>
         </div>
+        {tx.payee && (
+          <div className="row">
+            <span className="muted">{t('payee')}</span>
+            <span>{tx.payee}</span>
+          </div>
+        )}
         {categoryNames.length > 0 && (
           <div className="row">
             <span className="muted">{t('category')}</span>
@@ -154,7 +161,7 @@ export default function TransactionDetailPage() {
       )}
 
       {editing && shape ? (
-        <TransactionForm accounts={data.accounts} categories={data.categories} currency={currency} initial={shape} lockKind submitLabel={t('saveChanges')} onSubmit={save} onCancel={() => setEditing(false)} />
+        <TransactionForm accounts={data.accounts} categories={data.categories} currency={currency} payees={data.payees} initial={shape} lockKind submitLabel={t('saveChanges')} onSubmit={save} onCancel={() => setEditing(false)} />
       ) : (
         <section className="card actions" aria-label={t('actions')}>
           {changeable && shape && (

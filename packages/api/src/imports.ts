@@ -24,6 +24,7 @@ import {
 } from '@fintrack/domain';
 import {
   changeTransactionStatus,
+  ensurePayee,
   claimedTransactionIds,
   findCategoryBySystemKey,
   getBatch,
@@ -319,7 +320,17 @@ export async function confirmImport(db: Db, context: RequestContext, id: string,
   const taken = await importedKeys(db, context.workspaceId, batch.accountId);
   const records = new Map((await loadTransactionRecords(db, context.workspaceId)).map((record) => [record.tx.id, record]));
 
-  const created: { tx: Transaction; description: string | null }[] = [];
+  const created: { tx: Transaction; description: string | null; payeeId: string | null }[] = [];
+  // BR-05.6: a file's "other party" column names the payee.
+  const payeeIds = new Map<string, string>();
+  const payeeOf = async (row: ImportRow) => {
+    if (!row.counterparty) return null;
+    const known = payeeIds.get(row.counterparty);
+    if (known) return known;
+    const { id } = await ensurePayee(db, context.workspaceId, row.counterparty.slice(0, 100));
+    payeeIds.set(row.counterparty, id);
+    return id;
+  };
   const outcomes = [];
   for (const row of rows) {
     if (row.state !== 'pending') continue;
@@ -360,7 +371,7 @@ export async function confirmImport(db: Db, context: RequestContext, id: string,
       }
       const tx = build.transfer({ id: txId, date, ...ends, amount: size });
       validateTransaction(tx, chart, { today });
-      created.push({ tx, description });
+      created.push({ tx, description, payeeId: await payeeOf(row) });
       outcomes.push({ ...base, ordinal, state: 'imported' as const, createdTransactionId: txId });
       continue;
     }
@@ -372,7 +383,7 @@ export async function confirmImport(db: Db, context: RequestContext, id: string,
     // A row against the grain of its category reverses that category (E-31, E-35).
     const tx = amount < 0 && kind === 'expense' ? build.expense(base2) : amount > 0 && kind === 'income' ? build.income(base2) : build.refund(chart, base2);
     validateTransaction(tx, chart, { today });
-    created.push({ tx, description });
+    created.push({ tx, description, payeeId: await payeeOf(row) });
     outcomes.push({ ...base, ordinal, state: 'imported' as const, createdTransactionId: txId });
   }
 

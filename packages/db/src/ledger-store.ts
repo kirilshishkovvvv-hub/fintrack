@@ -80,6 +80,7 @@ export type TransactionOrigin = 'manual' | 'import' | 'occurrence' | 'system';
 export interface TransactionText {
   description: string | null;
   memo: string | null;
+  payeeId?: string | null;
 }
 
 /** What a version entry stores as its "before" and "after" values (LR-10, AC-19.2). */
@@ -100,6 +101,7 @@ export function snapshotOf(tx: Transaction, text: TransactionText): TransactionS
     postings: tx.postings,
     description: text.description,
     memo: text.memo,
+    payeeId: text.payeeId ?? null,
   };
 }
 
@@ -132,14 +134,14 @@ export async function insertTransaction(
   db: Db,
   workspaceId: string,
   tx: Transaction,
-  meta: { origin: TransactionOrigin; userId: string; description?: string; memo?: string },
+  meta: { origin: TransactionOrigin; userId: string; description?: string; memo?: string; payeeId?: string | null },
 ): Promise<{ versionId: string }> {
-  const text = { description: meta.description ?? null, memo: meta.memo ?? null };
+  const text = { description: meta.description ?? null, memo: meta.memo ?? null, payeeId: meta.payeeId ?? null };
   await db.query(
     `INSERT INTO fin.transactions (id, workspace_id, txn_date, kind, status, origin, refund_of_id, description, memo,
-                                   created_by, updated_by)
-     VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8, $9, $9)`,
-    [tx.id, workspaceId, tx.date, tx.kind, meta.origin, tx.refundOfId ?? null, text.description, text.memo, meta.userId],
+                                   payee_id, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, 'posted', $5, $6, $7, $8, $9, $10, $10)`,
+    [tx.id, workspaceId, tx.date, tx.kind, meta.origin, tx.refundOfId ?? null, text.description, text.memo, text.payeeId, meta.userId],
   );
   await insertPostings(db, workspaceId, tx);
   const versionId = uuidv7();
@@ -158,16 +160,16 @@ export async function insertTransaction(
 export async function insertTransactionsBulk(
   db: Db,
   workspaceId: string,
-  items: readonly { tx: Transaction; description: string | null }[],
+  items: readonly { tx: Transaction; description: string | null; payeeId?: string | null }[],
   meta: { origin: TransactionOrigin; userId: string },
 ): Promise<void> {
   if (items.length === 0) return;
   const currency = await workspaceCurrency(db, workspaceId);
   await db.query(
-    `INSERT INTO fin.transactions (id, workspace_id, txn_date, kind, status, origin, refund_of_id, description, created_by, updated_by)
-     SELECT x.id, $1, x.txn_date, x.kind, 'posted', $2, x.refund_of_id, x.description, $3, $3
-       FROM jsonb_to_recordset($4::jsonb) AS x(id uuid, txn_date date, kind text, refund_of_id uuid, description text)`,
-    [workspaceId, meta.origin, meta.userId, JSON.stringify(items.map(({ tx, description }) => ({ id: tx.id, txn_date: tx.date, kind: tx.kind, refund_of_id: tx.refundOfId ?? null, description })))],
+    `INSERT INTO fin.transactions (id, workspace_id, txn_date, kind, status, origin, refund_of_id, description, payee_id, created_by, updated_by)
+     SELECT x.id, $1, x.txn_date, x.kind, 'posted', $2, x.refund_of_id, x.description, x.payee_id, $3, $3
+       FROM jsonb_to_recordset($4::jsonb) AS x(id uuid, txn_date date, kind text, refund_of_id uuid, description text, payee_id uuid)`,
+    [workspaceId, meta.origin, meta.userId, JSON.stringify(items.map(({ tx, description, payeeId }) => ({ id: tx.id, txn_date: tx.date, kind: tx.kind, refund_of_id: tx.refundOfId ?? null, description, payee_id: payeeId ?? null })))],
   );
   await db.query(
     `INSERT INTO fin.postings (id, workspace_id, transaction_id, txn_date, txn_status, ledger_account_id, amount_minor, currency, line_no, mark)
@@ -272,6 +274,8 @@ interface PostingRow {
   origin: TransactionOrigin;
   description: string | null;
   memo: string | null;
+  payee_id: string | null;
+  payee_name: string | null;
   version: number;
   trashed_at: string | null;
   ledger_account_id: string;
@@ -284,6 +288,7 @@ interface PostingRow {
 export interface TransactionRecord extends TransactionText {
   tx: Transaction;
   origin: TransactionOrigin;
+  payeeName?: string | null;
   version: number;
   trashedAt: string | null;
 }
@@ -292,10 +297,11 @@ export interface TransactionRecord extends TransactionText {
 export async function loadTransactionRecords(db: Db, workspaceId: string, onlyId?: string): Promise<TransactionRecord[]> {
   const result = await db.query<PostingRow>(`
     SELECT t.id AS transaction_id, to_char(t.txn_date, 'YYYY-MM-DD') AS txn_date, t.kind, t.status, t.refund_of_id,
-           t.origin, t.description, t.memo, t.version, t.trashed_at::text,
+           t.origin, t.description, t.memo, t.payee_id, pa.name AS payee_name, t.version, t.trashed_at::text,
            p.ledger_account_id, p.amount_minor::text, p.mark, p.memo AS line_memo
       FROM fin.transactions t
       JOIN fin.postings p ON p.transaction_id = t.id
+      LEFT JOIN fin.payees pa ON pa.id = t.payee_id AND pa.workspace_id = t.workspace_id
      WHERE t.workspace_id = $1 AND p.workspace_id = $1 AND ($2::uuid IS NULL OR t.id = $2)
      ORDER BY t.txn_date, t.id, p.line_no`, [workspaceId, onlyId ?? null]);
   const byId = new Map<string, TransactionRecord>();
@@ -304,7 +310,7 @@ export async function loadTransactionRecords(db: Db, workspaceId: string, onlyId
     if (!record) {
       const tx: Transaction = { id: row.transaction_id, date: row.txn_date, kind: row.kind, status: row.status, postings: [] };
       if (row.refund_of_id) tx.refundOfId = row.refund_of_id;
-      record = { tx, origin: row.origin, description: row.description, memo: row.memo, version: row.version, trashedAt: row.trashed_at };
+      record = { tx, origin: row.origin, description: row.description, memo: row.memo, payeeId: row.payee_id, payeeName: row.payee_name, version: row.version, trashedAt: row.trashed_at };
       byId.set(row.transaction_id, record);
     }
     const amount = Number(row.amount_minor);

@@ -28,16 +28,22 @@ export async function listPayees(db: Db, workspaceId: string): Promise<PayeeRow[
 }
 
 /** The payee with this name, ignoring case and spacing, created if it's new. A merged-away name comes back to life. */
-export async function ensurePayee(db: Db, workspaceId: string, name: string): Promise<string> {
+export async function ensurePayee(db: Db, workspaceId: string, name: string): Promise<{ id: string; name: string }> {
   const normalized = normalizeDescription(name);
-  const existing = await db.query<{ id: string }>(
-    `UPDATE fin.payees SET is_archived = false, updated_at = now() WHERE workspace_id = $1 AND normalized_name = $2 RETURNING id`,
+  const existing = await db.query<{ id: string; name: string }>(
+    `UPDATE fin.payees SET is_archived = false, updated_at = now() WHERE workspace_id = $1 AND normalized_name = $2 RETURNING id, name`,
     [workspaceId, normalized],
   );
-  if (existing.rows[0]) return existing.rows[0].id;
+  if (existing.rows[0]) return existing.rows[0];
   const id = uuidv7();
   await db.query('INSERT INTO fin.payees (id, workspace_id, name, normalized_name) VALUES ($1, $2, $3, $4)', [id, workspaceId, name.trim(), normalized]);
-  return id;
+  return { id, name: name.trim() };
+}
+
+/** Whether another payee in the workspace already has this name, ignoring case and spacing. */
+export async function payeeNameTaken(db: Db, workspaceId: string, name: string, exceptId: string): Promise<boolean> {
+  const result = await db.query('SELECT 1 FROM fin.payees WHERE workspace_id = $1 AND normalized_name = $2 AND id <> $3', [workspaceId, normalizeDescription(name), exceptId]);
+  return (result.rowCount ?? 0) > 0;
 }
 
 /** Remembers the category last used with a payee, unless the user has chosen one. */

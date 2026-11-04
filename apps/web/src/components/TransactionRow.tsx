@@ -25,11 +25,14 @@ export function TransactionRow({
   accounts,
   categories,
   currency,
+  effect,
 }: {
   tx: Transaction;
   accounts: Map<string, Account>;
   categories: Map<string, Category>;
   currency: string;
+  /** The server's figure for the account being looked at, if one is chosen. */
+  effect?: number | undefined;
 }) {
   const t = useTranslations('transactions');
   const own = tx.lines.filter((line) => accounts.has(line.ledgerAccountId));
@@ -37,9 +40,11 @@ export function TransactionRow({
   const isTransfer = tx.kind === 'transfer';
   const net = ownEffect(tx, accounts);
   const accountNames = own.map((line) => accounts.get(line.ledgerAccountId)?.name).filter(Boolean).join(' → ');
-  const title = tx.description ?? category?.name ?? t(`kinds.${tx.kind}`);
-  const detail = [tx.date, tx.description && category ? category.name : null, accountNames].filter(Boolean).join(' · ');
-  const direction = isTransfer ? '' : net < 0 ? 'amount-out' : 'amount-in';
+  const title = tx.description ?? tx.payee ?? category?.name ?? t(`kinds.${tx.kind}`);
+  const detail = [tx.date, (tx.description || tx.payee) && category ? category.name : null, tx.description ? tx.payee : null, accountNames].filter(Boolean).join(' · ');
+  const signed = effect !== undefined;
+  const shownNet = signed ? effect : net;
+  const direction = isTransfer && !signed ? '' : shownNet < 0 ? 'amount-out' : 'amount-in';
   const voided = tx.status === 'voided';
 
   return (
@@ -59,7 +64,7 @@ export function TransactionRow({
         </div>
         <div className="small muted">{detail}</div>
       </div>
-      <span className={`amount ${direction}`}>{signedMoney(tx, accounts, currency)}</span>
+      <span className={`amount ${direction}`}>{signed ? `${shownNet < 0 ? '−' : '+'}${formatMoney(Math.abs(shownNet), currency)}` : signedMoney(tx, accounts, currency)}</span>
     </Link>
   );
 }

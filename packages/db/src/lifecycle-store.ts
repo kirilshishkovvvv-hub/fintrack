@@ -62,11 +62,11 @@ export async function replaceTransaction(
   await db.query('DELETE FROM fin.postings WHERE workspace_id = $1 AND transaction_id = $2', [workspaceId, tx.id]);
   const updated = await db.query<{ version: number }>(
     `UPDATE fin.transactions
-        SET txn_date = $3, kind = $4, refund_of_id = $5, description = $6, memo = $7,
+        SET txn_date = $3, kind = $4, refund_of_id = $5, description = $6, memo = $7, payee_id = $10,
             version = version + 1, updated_by = $8, updated_at = now()
       WHERE workspace_id = $1 AND id = $2 AND version = $9 AND status = 'posted'
       RETURNING version`,
-    [workspaceId, tx.id, tx.date, tx.kind, tx.refundOfId ?? null, options.description, options.memo, options.userId, options.expectedVersion],
+    [workspaceId, tx.id, tx.date, tx.kind, tx.refundOfId ?? null, options.description, options.memo, options.userId, options.expectedVersion, options.payeeId ?? null],
   );
   const version = updated.rows[0]?.version;
   if (version === undefined) throw new VersionConflict('Only posted transactions can be edited');

@@ -6,6 +6,7 @@ import {
   build,
   Ledger,
   safeToSpend,
+  normalizeDescription,
   todayIn,
   validateTransaction,
   type AccountClass,
@@ -17,6 +18,9 @@ import {
 import {
   changeTransactionStatus,
   createWorkspace,
+  ensurePayee,
+  findCategoryBySystemKey,
+  learnPayeeCategory,
   DELETION_WINDOW_DAYS,
   findUndoableVersion,
   getWorkspace,
@@ -49,6 +53,7 @@ import type {
   createTransferBody,
   createWorkspaceBody,
   editTransactionBody,
+  transactionsQuery,
 } from './schemas.ts';
 import { DEFAULT_CATEGORIES } from './seed.ts';
 
@@ -279,8 +284,25 @@ function buildTransfer(id: string, input: TransferInput): Transaction {
   return input.fee ? build.transfer({ ...base, fee: toLine(input.fee) }) : build.transfer(base);
 }
 
-type TextInput = { description?: string | undefined; memo?: string | undefined };
-const textOf = (input: TextInput): TransactionText => ({ description: input.description ?? null, memo: input.memo ?? null });
+type TextInput = { description?: string | undefined; memo?: string | undefined; payee?: string | undefined };
+
+/** The descriptive fields, creating the payee if the name is new (BR-05.6). */
+async function textOf(db: Db, context: RequestContext, input: TextInput): Promise<TransactionText & { payeeName: string | null }> {
+  const payee = input.payee ? await ensurePayee(db, context.workspaceId, input.payee) : null;
+  return {
+    description: input.description ?? null,
+    memo: input.memo ?? null,
+    payeeId: payee?.id ?? null,
+    payeeName: payee?.name ?? null,
+  };
+}
+
+/** A payee's default category follows what it was last used for, unless the user chose one (BR-05.6). */
+async function learnFrom(db: Db, context: RequestContext, tx: Transaction, chart: Chart, payeeId: string | null | undefined) {
+  if (!payeeId) return;
+  const categories = tx.postings.filter((p) => chart.find(p.ledgerAccountId)?.category);
+  if (categories.length === 1) await learnPayeeCategory(db, context.workspaceId, payeeId, categories[0]!.ledgerAccountId);
+}
 
 /** Validates a new or changed transaction exactly as the domain module defines it (§5, LR-01..18). */
 export async function checkAgainstLedger(db: Db, context: RequestContext, tx: Transaction, chart: Chart) {
@@ -298,13 +320,15 @@ export function audit(db: Db, context: RequestContext, type: string, transaction
 
 async function record(db: Db, context: RequestContext, tx: Transaction, chart: Chart, input: TextInput) {
   await checkAgainstLedger(db, context, tx, chart);
-  const text = textOf(input);
+  const text = await textOf(db, context, input);
   const { versionId } = await insertTransaction(db, context.workspaceId, tx, {
     origin: 'manual',
     userId: context.userId,
     ...(text.description ? { description: text.description } : {}),
     ...(text.memo ? { memo: text.memo } : {}),
+    payeeId: text.payeeId ?? null,
   });
+  await learnFrom(db, context, tx, chart, text.payeeId);
   await audit(db, context, 'transaction.created', tx.id);
   return withUndo(transactionDto({ tx, origin: 'manual', version: 1, trashedAt: null, ...text }), versionId);
 }
@@ -336,13 +360,56 @@ export async function recordTransfer(db: Db, context: RequestContext, input: Tra
   return record(db, context, buildTransfer(uuidv7(), input), chart, input);
 }
 
-/** The activity list: posted and voided transactions (voided ones stay visible, FR-19), newest first. */
-export async function listTransactions(db: Db, context: RequestContext, period: { from: string; to: string }) {
+/**
+ * Search and filter (BR-04.5): posted and voided transactions (voided ones stay visible, FR-19),
+ * newest first, in pages. The total covers every match, not just this page, and is worked out
+ * here (AC-04.5). It adds up each transaction's effect on the user's accounts: on the chosen
+ * account if there is one, otherwise on all of them, where a transfer comes to 0 apart from any fee.
+ * Voided transactions are shown but don't count (LR-09).
+ */
+export async function listTransactions(db: Db, context: RequestContext, query: z.infer<typeof transactionsQuery>) {
   const locked = await lockedTransactionIds(db, context.workspaceId);
-  return (await loadTransactionRecords(db, context.workspaceId))
-    .filter((record) => record.tx.status !== 'trashed' && record.tx.date >= period.from && record.tx.date <= period.to)
-    .sort((a, b) => (a.tx.date === b.tx.date ? (a.tx.id < b.tx.id ? 1 : -1) : a.tx.date < b.tx.date ? 1 : -1))
-    .map((record) => transactionDto(record, locked));
+  const chart = await loadChart(db, context.workspaceId);
+  const isOwn = (id: string) => chart.find(id)?.account !== undefined;
+  const subtree = query.categoryId ? chart.categorySubtree(query.categoryId) : null;
+  const text = query.q ? normalizeDescription(query.q) : null;
+
+  const effectOf = (tx: Transaction) => tx.postings.filter((p) => (query.accountId ? p.ledgerAccountId === query.accountId : isOwn(p.ledgerAccountId))).reduce((sum, p) => sum + p.amount, 0);
+  /** The size a person would call this transaction: for a transfer, the amount moved. */
+  const sizeOf = (tx: Transaction) => Math.max(0, ...tx.postings.filter((p) => isOwn(p.ledgerAccountId)).map((p) => Math.abs(p.amount)));
+
+  const matches = (await loadTransactionRecords(db, context.workspaceId))
+    .filter(({ tx, description, memo, payeeId, payeeName, origin }) => {
+      if (tx.status === 'trashed') return false;
+      if (query.from && tx.date < query.from) return false;
+      if (query.to && tx.date > query.to) return false;
+      if (query.accountId && !tx.postings.some((p) => p.ledgerAccountId === query.accountId)) return false;
+      if (subtree && !tx.postings.some((p) => subtree.has(p.ledgerAccountId))) return false;
+      if (query.payeeId && payeeId !== query.payeeId) return false;
+      if (query.kind && tx.kind !== query.kind) return false;
+      if (query.origin && origin !== query.origin) return false;
+      if (query.reconciled && locked.has(tx.id) !== (query.reconciled === 'true')) return false;
+      if (query.minAmount_minor !== undefined && sizeOf(tx) < query.minAmount_minor) return false;
+      if (query.maxAmount_minor !== undefined && sizeOf(tx) > query.maxAmount_minor) return false;
+      if (text) {
+        const lineNotes = tx.postings.map((p) => p.memo ?? '').join(' ');
+        if (!normalizeDescription(`${description ?? ''} ${memo ?? ''} ${payeeName ?? ''} ${lineNotes}`).includes(text)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => (a.tx.date === b.tx.date ? (a.tx.id < b.tx.id ? 1 : -1) : a.tx.date < b.tx.date ? 1 : -1));
+
+  const total = matches.reduce((sum, record) => (record.tx.status === 'posted' ? sum + effectOf(record.tx) : sum), 0);
+  const cursorKey = (tx: Transaction) => `${tx.date}_${tx.id}`;
+  const start = query.cursor ? matches.findIndex((record) => cursorKey(record.tx) < query.cursor!) : 0;
+  const page = start < 0 ? [] : matches.slice(start, start + query.limit);
+  const hasMore = start >= 0 && start + query.limit < matches.length;
+  return {
+    items: page.map((record) => ({ ...transactionDto(record, locked), effect_minor: effectOf(record.tx) })),
+    count: matches.length,
+    total_minor: total,
+    nextCursor: hasMore ? cursorKey(page.at(-1)!.tx) : null,
+  };
 }
 
 /** The trash: recoverable for 30 days, then purged (FR-19, OD-05). Most recently deleted first. */
@@ -390,8 +457,9 @@ export async function editTransaction(db: Db, context: RequestContext, id: strin
   const tx = buildFromIntention(chart, id, input);
   await checkRefundSize(db, context, tx, chart, input);
   await checkAgainstLedger(db, context, tx, chart);
-  const text = textOf(input);
+  const text = await textOf(db, context, input);
   const result = await replaceTransaction(db, context.workspaceId, tx, { ...text, expectedVersion, userId: context.userId });
+  await learnFrom(db, context, tx, chart, text.payeeId);
   await audit(db, context, 'transaction.edited', id);
   return withUndo(transactionDto({ ...existing, ...text, tx, version: result.version }), result.versionId);
 }
@@ -461,7 +529,7 @@ export async function undo(db: Db, context: RequestContext, token: string) {
     const tx: Transaction = { id: existing.tx.id, date: before.date, kind: before.kind, status: 'posted', postings: before.postings };
     if (before.refundOfId) tx.refundOfId = before.refundOfId;
     await checkAgainstLedger(db, context, tx, await loadChart(db, context.workspaceId));
-    const text = { description: before.description, memo: before.memo };
+    const text = { description: before.description, memo: before.memo, payeeId: before.payeeId ?? null };
     result = await replaceTransaction(db, context.workspaceId, tx, { ...text, expectedVersion: existing.version, userId: context.userId });
     updated = { ...existing, ...text, tx };
   } else if (entry.changeType === 'create' || entry.changeType === 'void' || entry.changeType === 'trash' || entry.changeType === 'restore') {
@@ -478,7 +546,9 @@ export async function undo(db: Db, context: RequestContext, token: string) {
     throw new ApiError(409, 'UNDO_EXPIRED', 'This change cannot be undone');
   }
   await audit(db, context, 'transaction.undone', existing.tx.id);
-  return transactionDto({ ...updated, version: result.version });
+  // Read again: an undone edit can bring back another payee, whose name isn't in the snapshot.
+  const { payeeName } = await loadOrNotFound(db, context, existing.tx.id);
+  return transactionDto({ ...updated, payeeName: payeeName ?? null, version: result.version });
 }
 
 export function withUndo<T extends object>(dto: T, versionId: string) {
@@ -519,6 +589,8 @@ export function transactionDto(record: TransactionRecord, locked: ReadonlySet<st
     origin: record.origin,
     description: record.description,
     memo: record.memo,
+    payeeId: record.payeeId ?? null,
+    payee: record.payeeName ?? null,
     refundOfId: tx.refundOfId ?? null,
     trashedAt: record.trashedAt,
     lines: linesDto(tx.postings),
@@ -536,6 +608,14 @@ export async function summary(db: Db, context: RequestContext, at?: string) {
   if (date > today) throw new ApiError(422, 'VALIDATION_FAILED', 'The summary date cannot be in the future');
   const ledger = new Ledger(await loadChart(db, context.workspaceId), await loadTransactions(db, context.workspaceId));
   const sts = safeToSpend({ ledger, today: date, protectedReserve: workspace.protectedReserveMinor });
+  // AC-05.3: the Uncategorized total is shown whenever it isn't zero.
+  const month = date.slice(0, 7);
+  const uncategorized = [];
+  for (const key of ['expense.uncategorized', 'income.uncategorized'] as const) {
+    const id = await findCategoryBySystemKey(db, context.workspaceId, key);
+    const total = id ? ledger.categoryMonthTotal(id, month) : 0;
+    if (id && total !== 0) uncategorized.push({ categoryId: id, kind: key.split('.')[0]!, total_minor: total });
+  }
   return {
     at: date,
     currency: workspace.currency,
@@ -543,6 +623,7 @@ export async function summary(db: Db, context: RequestContext, at?: string) {
     assets_minor: ledger.assets(date),
     liabilities_minor: ledger.liabilities(date),
     netWorth_minor: ledger.netWorth(date),
+    uncategorized,
     safeToSpend: {
       value_minor: sts.value,
       eligibleFunds_minor: sts.elf,

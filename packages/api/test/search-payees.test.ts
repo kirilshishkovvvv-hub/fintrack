@@ -132,6 +132,16 @@ describe('payees (BR-05.6)', () => {
     expect((await client.call('PATCH', `/api/v1/payees/${list[0].id}`, { headers: { 'if-match': '1' }, body: { name: 'stale' } })).body.code).toBe('VERSION_CONFLICT');
   });
 
+  test('a payee cannot take the name of another; merging is the way', async () => {
+    const { client, expense } = await setUp();
+    await expense('2026-03-05', 'Food', 100, { payee: 'Lidl' });
+    await expense('2026-03-06', 'Food', 100, { payee: 'Billa' });
+    const billa = (await payees(client)).find((p) => p.name === 'Billa');
+    const renamed = await client.call('PATCH', `/api/v1/payees/${billa.id}`, { headers: { 'if-match': String(billa.version) }, body: { name: ' lidl ' } });
+    expect(renamed.status).toBe(409);
+    expect(renamed.body.code).toBe('PAYEE_NAME_TAKEN');
+  });
+
   test('merging moves the transactions and audits it; an edit keeps or changes the payee; undo restores it', async () => {
     const { client, expense, category, current } = await setUp();
     const tx = await expense('2026-03-05', 'Food', 100, { payee: 'Lidl BG' });
@@ -147,7 +157,8 @@ describe('payees (BR-05.6)', () => {
 
     const edited = (await client.call('PATCH', `/api/v1/transactions/${tx.id}`, { headers: { 'if-match': String(read.version) }, body: { kind: 'expense', date: '2026-03-05', accountId: current, payee: 'Billa', lines: [{ categoryId: category('Food'), amount_minor: 100 }] } })).body;
     expect(edited.payee).toBe('Billa');
-    await client.call('POST', `/api/v1/undo/${edited.undo.token}`, { key: key() });
+    const undone = await client.call('POST', `/api/v1/undo/${edited.undo.token}`, { key: key() });
+    expect(undone.body.payee).toBe('Lidl');
     expect((await client.call('GET', `/api/v1/transactions/${tx.id}`)).body.payee).toBe('Lidl');
   });
 

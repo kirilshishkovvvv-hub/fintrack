@@ -41,6 +41,12 @@ export class Ledger {
     return this.chart.get(accountId).kind === 'liability' ? -raw : raw;
   }
 
+  /** The sum of the postings to a category and its subcategories in a month, as shown to the user. */
+  categoryMonthTotal(categoryId: string, month: string): Cents {
+    const raw = this.budgetSpent(categoryId, month);
+    return this.chart.get(categoryId).kind === 'income' ? -raw : raw;
+  }
+
   cashBalance(onDate: IsoDate): Cents {
     return this.sum((tx, p) => tx.date <= onDate && this.isCash(this.chart.get(p.ledgerAccountId)));
   }

@@ -87,6 +87,13 @@ export default function DashboardPage() {
         </details>
       </section>
 
+      {summary.uncategorized.map((item) => (
+        <p className="notice notice-warning small" key={item.categoryId}>
+          {t(item.kind === 'income' ? 'uncategorizedIncome' : 'uncategorizedExpense', { amount: formatMoney(Math.abs(item.total_minor), currency) })}{' '}
+          <Link href={`/transactions?categoryId=${item.categoryId}`}>{t('uncategorizedLink')}</Link>
+        </p>
+      ))}
+
       <div className="grid-2">
         <section className="card">
           <p className="eyebrow">{t('netWorth')}</p>

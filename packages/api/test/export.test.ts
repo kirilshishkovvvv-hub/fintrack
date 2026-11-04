@@ -104,7 +104,7 @@ describe('export my data (FR-17)', () => {
     expect(response.headers.get('content-type')).toBe('application/zip');
     expect(response.headers.get('content-disposition')).toMatch(/^attachment; filename="fintrack-export-\d{4}-\d{2}-\d{2}\.zip"$/);
     const files = unzip(Buffer.from(await response.arrayBuffer()));
-    expect(Object.keys(files).sort()).toEqual(['accounts.csv', 'categories.csv', 'data.json', 'reconciliations.csv', 'transactions.csv']);
+    expect(Object.keys(files).sort()).toEqual(['accounts.csv', 'categories.csv', 'data.json', 'payees.csv', 'reconciliations.csv', 'transactions.csv']);
     expect(files['transactions.csv']!.subarray(0, 3).toString('hex')).toBe('efbbbf');
 
     const lines = parseCsv(files['transactions.csv']!);
@@ -221,7 +221,7 @@ describe('an encrypted export', () => {
     expect(zip.includes('very private text')).toBe(false);
     expect(() => decrypt(zip, 'the wrong password here')).toThrow('wrong password');
     const files = decrypt(zip, PASSWORD_FOR_FILE);
-    expect(Object.keys(files).sort()).toEqual(['accounts.csv', 'categories.csv', 'data.json', 'reconciliations.csv', 'transactions.csv']);
+    expect(Object.keys(files).sort()).toEqual(['accounts.csv', 'categories.csv', 'data.json', 'payees.csv', 'reconciliations.csv', 'transactions.csv']);
     expect(files['transactions.csv']!.toString('utf8')).toContain('very private text');
   });
 

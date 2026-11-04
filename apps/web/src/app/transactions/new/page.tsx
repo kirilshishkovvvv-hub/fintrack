@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { AppShell, LoadError } from '@/components/AppShell';
-import { TransactionForm, valuesFrom, type FormValues } from '@/components/TransactionForm';
+import { TransactionForm, valuesFrom, type FormValues, type PayeeOption } from '@/components/TransactionForm';
 import { useUndo } from '@/components/UndoToast';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { active, loadAccounts, loadCategories, loadSummary, todayLocal, useApiData, type Transaction, type TransactionDetail } from '@/lib/use-api';
@@ -21,13 +21,14 @@ function NewTransaction() {
   const key = useRef(newIdempotencyKey());
   const offerUndo = useUndo();
   const { data, failed, reload } = useApiData(async () => {
-    const [accounts, categories, summary, source] = await Promise.all([
+    const [accounts, categories, summary, payees, source] = await Promise.all([
       loadAccounts(),
       loadCategories(),
       loadSummary(),
+      api<{ items: PayeeOption[] }>('GET', '/api/v1/payees').then((r) => r.items),
       copyOf || refundOf ? api<TransactionDetail>('GET', `/api/v1/transactions/${copyOf ?? refundOf}`) : Promise.resolve(null),
     ]);
-    return { accounts, categories, currency: summary.currency, source };
+    return { accounts, categories, currency: summary.currency, payees, source };
   });
   if (failed) return <LoadError retry={reload} />;
   if (!data) {
@@ -72,7 +73,7 @@ function NewTransaction() {
     <AppShell>
       <h1>{t('title')}</h1>
       {refundOf && data.source && <p className="small muted">{t('refundFor', { original: data.source.description ?? data.source.date })}</p>}
-      <TransactionForm accounts={data.accounts} categories={data.categories} currency={data.currency} initial={initial} submitLabel={t('submit')} onSubmit={save} />
+      <TransactionForm accounts={data.accounts} categories={data.categories} currency={data.currency} payees={data.payees} initial={initial} submitLabel={t('submit')} onSubmit={save} />
     </AppShell>
   );
 }

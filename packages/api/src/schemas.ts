@@ -43,6 +43,8 @@ export const createCategoryBody = z.strictObject({
 const meta = {
   description: text(500).optional(),
   memo: text(1000).optional(),
+  /** A name, not an ID: a new name creates the payee (BR-05.6). */
+  payee: text(100).optional(),
 };
 const plainLine = z.strictObject({ categoryId: id, amount_minor: positiveMinor, memo: text(500).optional() });
 const expenseLine = plainLine.extend({ mark: z.literal('discount').optional() });
@@ -180,7 +182,29 @@ export const auditQuery = z.strictObject({ before: id.optional() });
 
 export const reconciliationsQuery = z.strictObject({ accountId: id.optional() });
 
-export const periodQuery = z.strictObject({ from: isoDate, to: isoDate }).refine((p) => p.from <= p.to, 'from must not be after to');
+const minorQuery = z.coerce.number().int().min(0).max(MAX_ABS_CENTS);
+
+/** Search and filter (BR-04.5), each against an allowlist. Tags join with the tags feature (Should). */
+export const transactionsQuery = z
+  .strictObject({
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    q: z.string().trim().max(100).optional(),
+    accountId: id.optional(),
+    categoryId: id.optional(),
+    payeeId: id.optional(),
+    kind: z.enum(['expense', 'income', 'transfer', 'refund', 'debt_payment', 'split', 'opening_balance', 'adjustment', 'valuation']).optional(),
+    origin: z.enum(['manual', 'import', 'occurrence', 'system']).optional(),
+    reconciled: z.enum(['true', 'false']).optional(),
+    minAmount_minor: minorQuery.optional(),
+    maxAmount_minor: minorQuery.optional(),
+    cursor: z.string().max(60).regex(/^\d{4}-\d{2}-\d{2}_[0-9a-f-]{36}$/).optional(),
+    limit: z.coerce.number().int().min(1).max(1000).default(1000),
+  })
+  .refine((p) => !p.from || !p.to || p.from <= p.to, 'from must not be after to');
+
+export const updatePayeeBody = z.strictObject({ name: text(100).optional(), defaultCategoryId: id.nullable().optional() });
+export const mergePayeeBody = z.strictObject({ intoId: id });
 
 export const summaryQuery = z.strictObject({ at: isoDate.optional() });
 

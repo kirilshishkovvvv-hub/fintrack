@@ -186,6 +186,21 @@ export function createApp(deps: AppDependencies) {
         return json(result.status, result.body, result.replayed ? { 'idempotent-replayed': 'true' } : {});
       },
     },
+    { method: 'GET', pattern: /^\/api\/v1\/payees$/, handler: async (call) => json(200, { items: await inWorkspace(call.userId, catalog.getPayees) }) },
+    {
+      method: 'PATCH',
+      pattern: new RegExp(`^/api/v1/payees/${UUID}$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.updatePayeeBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => catalog.changePayee(db, context, call.params.id!, version, input), true));
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/payees/${UUID}/merge$`),
+      handler: idempotentWrite(schemas.mergePayeeBody, (db, context, input, call) => catalog.mergePayees(db, context, call.params.id!, input.intoId), { status: 200 }),
+    },
     { method: 'GET', pattern: /^\/api\/v1\/imports$/, handler: async (call) => json(200, { items: await inWorkspace(call.userId, imports.listImports) }) },
     { method: 'GET', pattern: /^\/api\/v1\/import-profiles$/, handler: async (call) => json(200, { items: await inWorkspace(call.userId, imports.getProfiles) }) },
     {
@@ -249,8 +264,8 @@ export function createApp(deps: AppDependencies) {
       method: 'GET',
       pattern: /^\/api\/v1\/transactions$/,
       handler: async (call) => {
-        const period = schemas.periodQuery.parse(Object.fromEntries(call.url.searchParams));
-        return json(200, { items: await inWorkspace(call.userId, (db, context) => services.listTransactions(db, context, period)) });
+        const query = schemas.transactionsQuery.parse(Object.fromEntries(call.url.searchParams));
+        return json(200, await inWorkspace(call.userId, (db, context) => services.listTransactions(db, context, query)));
       },
     },
     {

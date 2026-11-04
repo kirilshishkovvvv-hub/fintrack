@@ -5,6 +5,10 @@
 import { Ledger, todayIn } from '@fintrack/domain';
 import {
   getWorkspace,
+  listPayees,
+  mergePayee,
+  payeeNameTaken,
+  updatePayee,
   loadChart,
   loadTransactions,
   mergeCategory,
@@ -15,6 +19,37 @@ import {
 } from '@fintrack/db';
 import { ApiError } from './http.ts';
 import { accountDto, categoryDto } from './services.ts';
+
+export const getPayees = (db: Db, context: RequestContext) => listPayees(db, context.workspaceId);
+
+async function payeeOr404(db: Db, context: RequestContext, id: string) {
+  const payee = (await listPayees(db, context.workspaceId)).find((candidate) => candidate.id === id);
+  if (!payee) throw new ApiError(404, 'NOT_FOUND', 'Payee not found');
+  return payee;
+}
+
+/** Renames a payee or sets its default category; a chosen default stops the learning (BR-05.6). */
+export async function changePayee(db: Db, context: RequestContext, id: string, expectedVersion: number, input: { name?: string | undefined; defaultCategoryId?: string | null | undefined }) {
+  await payeeOr404(db, context, id);
+  if (input.defaultCategoryId && !(await loadChart(db, context.workspaceId)).find(input.defaultCategoryId)?.category) {
+    throw new ApiError(422, 'INVALID_REFERENCE', 'The category does not exist');
+  }
+  if (input.name && (await payeeNameTaken(db, context.workspaceId, input.name, id))) {
+    throw new ApiError(409, 'PAYEE_NAME_TAKEN', 'Another payee has this name. Merge them instead');
+  }
+  const version = await updatePayee(db, context.workspaceId, id, { ...input, expectedVersion });
+  if (version === null) throw new ApiError(409, 'VERSION_CONFLICT', 'The payee was changed since you opened it');
+  return payeeOr404(db, context, id);
+}
+
+export async function mergePayees(db: Db, context: RequestContext, fromId: string, intoId: string) {
+  if (fromId === intoId) throw new ApiError(422, 'VALIDATION_FAILED', 'Choose a different payee to merge into');
+  await payeeOr404(db, context, fromId);
+  await payeeOr404(db, context, intoId);
+  const moved = await mergePayee(db, context.workspaceId, fromId, intoId);
+  await event(db, context, 'payee.merged', 'payee', fromId);
+  return { moved };
+}
 
 /** The latest possible date, so a balance includes every posting whatever its date. */
 const ALL_TIME = '9999-12-31';

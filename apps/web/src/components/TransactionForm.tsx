@@ -29,7 +29,14 @@ export interface FormValues {
   date: string;
   description: string;
   memo: string;
+  payee: string;
   refundOfId: string | null;
+}
+
+export interface PayeeOption {
+  name: string;
+  defaultCategoryId: string | null;
+  archived: boolean;
 }
 
 /** "45.60" for 4560: an exact decimal string for a field, without floating point. */
@@ -52,6 +59,7 @@ export function valuesFrom(tx: Transaction, accounts: Map<string, Account>, cate
     date: tx.date,
     description: tx.description ?? '',
     memo: tx.memo ?? '',
+    payee: tx.payee ?? '',
     refundOfId: tx.refundOfId ?? null,
     toId: '',
   };
@@ -113,6 +121,7 @@ export function TransactionForm({
   accounts,
   categories,
   currency,
+  payees = [],
   initial,
   lockKind,
   submitLabel,
@@ -122,6 +131,7 @@ export function TransactionForm({
   accounts: Account[];
   categories: Category[];
   currency: string;
+  payees?: PayeeOption[];
   initial?: Partial<FormValues> | undefined;
   lockKind?: boolean;
   submitLabel: string;
@@ -145,6 +155,7 @@ export function TransactionForm({
     date: todayLocal(),
     description: '',
     memo: '',
+    payee: '',
     refundOfId: null,
     ...initial,
   });
@@ -171,6 +182,15 @@ export function TransactionForm({
   const isLineKind = kind === 'expense' || kind === 'income' || kind === 'refund';
   const parsedTotal = parseUserAmount(values.total);
   // Keeps each category choice valid for the kind on screen.
+  /** Naming a known payee fills in its usual category, if the user hasn't chosen one (BR-05.6). */
+  function choosePayee(name: string) {
+    const known = payees.find((payee) => payee.name.toLowerCase() === name.trim().toLowerCase());
+    const category = known?.defaultCategoryId ? byId.get(known.defaultCategoryId) : undefined;
+    const fits = category && !category.archived && (kind === 'refund' || category.kind === (kind === 'income' ? 'income' : 'expense'));
+    if (fits && values.lines.length === 1 && !values.lines[0]!.target) set({ payee: name, lines: [{ ...values.lines[0]!, target: category.id }] });
+    else set({ payee: name });
+  }
+
   const firstTarget = kind === 'income' ? ofKind('income')[0]?.id : ofKind('expense')[0]?.id;
   const shownTarget = (line: Line) => line.target || firstTarget || '';
 
@@ -214,6 +234,7 @@ export function TransactionForm({
       date: values.date,
       ...(values.description.trim() ? { description: values.description.trim() } : {}),
       ...(values.memo.trim() ? { memo: values.memo.trim() } : {}),
+      ...(values.payee.trim() ? { payee: values.payee.trim() } : {}),
     };
     const optional = (raw: string) => (raw.trim() === '' ? 0 : parseUserAmount(raw));
 
@@ -481,6 +502,15 @@ export function TransactionForm({
       <div className="field">
         <label htmlFor="date">{t('date')}</label>
         <input id="date" type="date" value={values.date} max={todayLocal()} required onChange={(event) => set({ date: event.target.value })} />
+      </div>
+      <div className="field">
+        <label htmlFor="payee">{t('payee')}</label>
+        <input id="payee" type="text" maxLength={100} list="payee-options" autoComplete="off" value={values.payee} onChange={(event) => choosePayee(event.target.value)} />
+        <datalist id="payee-options">
+          {payees.filter((payee) => !payee.archived).map((payee) => (
+            <option key={payee.name} value={payee.name} />
+          ))}
+        </datalist>
       </div>
       <div className="field">
         <label htmlFor="description">{t('description')}</label>

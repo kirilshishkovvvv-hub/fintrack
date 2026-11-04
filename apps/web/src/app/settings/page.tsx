@@ -10,6 +10,7 @@ export default function SettingsPage() {
   const items = [
     { href: '/settings/security', title: t('security'), hint: t('securityHint') },
     { href: '/settings/passkeys', title: t('passkeys'), hint: t('passkeysHint') },
+    { href: '/settings/payees', title: t('payees'), hint: t('payeesHint') },
     { href: '/export', title: t('export'), hint: t('exportHint') },
     { href: '/audit', title: t('audit'), hint: t('auditHint') },
     { href: '/delete-account', title: t('delete'), hint: t('deleteHint') },

@@ -10,6 +10,7 @@ import {
   currentConsents,
   getWorkspace,
   listReconciliations,
+  listPayees,
   listTransactionVersions,
   loadChart,
   loadTransactionRecords,
@@ -125,7 +126,7 @@ function parentName(chart: Chart, account: LedgerAccount): string | null {
 }
 
 /**
- * Builds the export package and records the audit event. Budgets, goals, rules, payees and tags
+ * Builds the export package and records the audit event. Budgets, goals, rules and tags
  * join these files with the stages that bring them; the schema version covers that growth.
  */
 export async function buildExport(db: Db, context: RequestContext, password?: string): Promise<{ filename: string; zip: Buffer }> {
@@ -135,6 +136,7 @@ export async function buildExport(db: Db, context: RequestContext, password?: st
   const locked = await lockedTransactionIds(db, context.workspaceId);
   const reconciliations = await listReconciliations(db, context.workspaceId);
   const consents = await currentConsents(db, context.userId);
+  const payees = await listPayees(db, context.workspaceId);
   const ledger = new Ledger(chart, records.map((record) => record.tx));
   const today = todayIn(workspace.timezone);
   const { currency } = workspace;
@@ -177,7 +179,7 @@ export async function buildExport(db: Db, context: RequestContext, password?: st
       // One row per line. The lines of each transaction sum to 0 (AC-17.1).
       name: 'transactions.csv',
       data: toCsv(
-        ['transaction_id', 'date', 'kind', 'status', 'reconciled', 'description', 'memo', 'refund_of', 'line', 'target_type', 'target', 'amount', 'currency', 'mark'],
+        ['transaction_id', 'date', 'kind', 'status', 'reconciled', 'description', 'memo', 'payee', 'refund_of', 'line', 'target_type', 'target', 'amount', 'currency', 'mark', 'line_note'],
         records.flatMap((record) =>
           record.tx.postings.map((posting, index): Cell[] => {
             const target = chart.get(posting.ledgerAccountId);
@@ -189,6 +191,7 @@ export async function buildExport(db: Db, context: RequestContext, password?: st
               locked.has(record.tx.id),
               record.description,
               record.memo,
+              record.payeeName ?? null,
               record.tx.refundOfId ?? null,
               index + 1,
               targetType(target),
@@ -196,9 +199,17 @@ export async function buildExport(db: Db, context: RequestContext, password?: st
               numeric(posting.amount),
               currency,
               posting.mark ?? null,
+              posting.memo ?? null,
             ];
           }),
         ),
+      ),
+    },
+    {
+      name: 'payees.csv',
+      data: toCsv(
+        ['id', 'name', 'default_category', 'archived'],
+        payees.map((payee) => [payee.id, payee.name, payee.defaultCategoryId ? chart.get(payee.defaultCategoryId).name : null, payee.archived]),
       ),
     },
     {
@@ -227,12 +238,14 @@ export async function buildExport(db: Db, context: RequestContext, password?: st
             exportedOn: today,
             workspace: { name: workspace.name, currency, timezone: workspace.timezone, protectedReserve_minor: workspace.protectedReserveMinor },
             ledgerAccounts: chart.all(),
+            payees,
             balances_minor: Object.fromEntries(accounts.map((account) => [account.id, ledger.balance(account.id, today)])),
             transactions: records.map((record) => ({
               ...record.tx,
               origin: record.origin,
               description: record.description,
               memo: record.memo,
+              payee: record.payeeName ?? null,
               version: record.version,
               trashedAt: record.trashedAt,
             })),

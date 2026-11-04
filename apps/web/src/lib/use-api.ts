@@ -59,6 +59,7 @@ export interface Transaction {
   version: number;
   description: string | null;
   memo: string | null;
+  payee?: string | null;
   trashedAt: string | null;
   lines: TransactionLine[];
   /** Present on the response to an action that can be undone for a few seconds (GAP-4). */
@@ -95,6 +96,7 @@ export interface Summary {
   at: string;
   currency: 'EUR' | 'USD';
   netWorth_minor: number;
+  uncategorized: { categoryId: string; kind: string; total_minor: number }[];
   safeToSpend: { value_minor: number; eligibleFunds_minor: number; cardReserve_minor: number; protectedReserve_minor: number };
 }
 
