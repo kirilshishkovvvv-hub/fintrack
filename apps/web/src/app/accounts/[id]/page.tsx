@@ -134,6 +134,9 @@ export default function AccountPage() {
               {t('reconcile')}
             </Link>
           )}
+          <Link href={`/accounts/${account.id}/edit`} className="btn">
+            {t('edit')}
+          </Link>
           {!account.archived && (
             <Link href={`/import?account=${account.id}`} className="btn">
               {t('import')}

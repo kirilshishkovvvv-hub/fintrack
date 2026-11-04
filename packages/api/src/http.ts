@@ -30,6 +30,8 @@ export type ProblemCode =
   | 'IMPORT_EDITED'
   | 'REFUND_EXCEEDS_ORIGINAL'
   | 'PAYEE_NAME_TAKEN'
+  | 'OPENING_DATE_TOO_LATE'
+  | 'CURRENCY_LOCKED'
   | 'INTERNAL';
 
 export class ApiError extends Error {

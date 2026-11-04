@@ -13,6 +13,7 @@ export interface Account {
   cardReserve: boolean;
   archived: boolean;
   balance_minor: number;
+  version: number;
 }
 
 export interface Category {
@@ -21,6 +22,7 @@ export interface Category {
   kind: 'income' | 'expense';
   parentId: string | null;
   archived: boolean;
+  version: number;
 }
 
 /** A finished reconciliation, with its figures as the ledger stands now (FR-18). */

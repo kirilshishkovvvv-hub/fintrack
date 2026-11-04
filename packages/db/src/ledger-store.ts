@@ -61,14 +61,15 @@ export async function insertLedgerAccount(
     const info = account.account;
     await db.query(
       `INSERT INTO fin.accounts (ledger_account_id, workspace_id, ledger_kind, account_class, account_type,
-                                 spendable, card_reserve, opening_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                                 spendable, card_reserve, opening_date, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+               (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM fin.accounts WHERE workspace_id = $2))`,
       [account.id, workspaceId, account.kind, info.class, info.type, info.spendable, info.cardReserve, info.openingDate],
     );
   } else if (account.category) {
     await db.query(
-      `INSERT INTO fin.categories (ledger_account_id, workspace_id, ledger_kind, parent_id, system_key)
-       VALUES ($1, $2, $3, $4, $5)`,
+      `INSERT INTO fin.categories (ledger_account_id, workspace_id, ledger_kind, parent_id, system_key, sort_order)
+       VALUES ($1, $2, $3, $4, $5, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM fin.categories WHERE workspace_id = $2))`,
       [account.id, workspaceId, account.kind, account.category.parentId ?? null, options.systemKey ?? null],
     );
   }

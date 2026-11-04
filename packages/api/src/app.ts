@@ -30,6 +30,7 @@ import * as catalog from './catalog.ts';
 import * as reconciliation from './reconciliation.ts';
 import * as schemas from './schemas.ts';
 import * as services from './services.ts';
+import * as settings from './settings.ts';
 
 export interface AppDependencies {
   pool: pg.Pool;
@@ -246,7 +247,26 @@ export function createApp(deps: AppDependencies) {
     {
       method: 'GET',
       pattern: /^\/api\/v1\/workspace$/,
-      handler: async (call) => json(200, services.workspaceDto(await inWorkspace(call.userId, (db, context) => getWorkspace(db, context.workspaceId), false, true))),
+      handler: async (call) => json(200, await inWorkspace(call.userId, settings.workspaceSettings, false, true)),
+    },
+    {
+      method: 'PATCH',
+      pattern: /^\/api\/v1\/workspace$/,
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.updateWorkspaceBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => settings.changeWorkspace(db, context, version, input), true));
+      },
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/me\/consents$/,
+      handler: async (call) => json(200, await inWorkspace(call.userId, settings.myConsents)),
+    },
+    {
+      method: 'POST',
+      pattern: /^\/api\/v1\/me\/consents$/,
+      handler: idempotentWrite(schemas.consentBody, (db, context, input) => settings.changeMarketingConsent(db, context, input.accepted), { status: 200 }),
     },
     {
       method: 'GET',
@@ -255,11 +275,59 @@ export function createApp(deps: AppDependencies) {
     },
     { method: 'POST', pattern: /^\/api\/v1\/accounts$/, handler: idempotentWrite(schemas.createAccountBody, services.createAccount) },
     {
+      method: 'POST',
+      pattern: /^\/api\/v1\/accounts\/order$/,
+      handler: async (call) => {
+        const { ids } = schemas.orderBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => settings.orderAccounts(db, context, ids), true));
+      },
+    },
+    {
+      method: 'GET',
+      pattern: new RegExp(`^/api/v1/accounts/${UUID}$`),
+      handler: async (call) => json(200, await inWorkspace(call.userId, (db, context) => settings.accountDetail(db, context, call.params.id!))),
+    },
+    {
+      method: 'PATCH',
+      pattern: new RegExp(`^/api/v1/accounts/${UUID}$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.updateAccountBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => settings.changeAccount(db, context, call.params.id!, version, input), true));
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/accounts/${UUID}/opening$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.openingBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => settings.changeOpening(db, context, call.params.id!, version, input), true));
+      },
+    },
+    {
       method: 'GET',
       pattern: /^\/api\/v1\/categories$/,
       handler: async (call) => json(200, { items: await inWorkspace(call.userId, services.listCategories) }),
     },
     { method: 'POST', pattern: /^\/api\/v1\/categories$/, handler: idempotentWrite(schemas.createCategoryBody, services.createCategory) },
+    {
+      method: 'POST',
+      pattern: /^\/api\/v1\/categories\/order$/,
+      handler: async (call) => {
+        const { ids } = schemas.orderBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => settings.orderCategories(db, context, ids), true));
+      },
+    },
+    {
+      method: 'PATCH',
+      pattern: new RegExp(`^/api/v1/categories/${UUID}$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.updateCategoryBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => settings.changeCategory(db, context, call.params.id!, version, input), true));
+      },
+    },
     {
       method: 'GET',
       pattern: /^\/api\/v1\/transactions$/,

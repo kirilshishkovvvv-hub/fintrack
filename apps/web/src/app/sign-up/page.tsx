@@ -70,10 +70,10 @@ export default function SignUpPage() {
             </span>
           </div>
           <label className="check">
-            <input type="checkbox" name="terms" /> <span>{t('acceptTerms')}</span>
+            <input type="checkbox" name="terms" /> <span>{t.rich('acceptTerms', { link: (text) => <a href="/legal/terms" target="_blank" rel="noreferrer">{text}</a> })}</span>
           </label>
           <label className="check">
-            <input type="checkbox" name="privacy" /> <span>{t('acceptPrivacy')}</span>
+            <input type="checkbox" name="privacy" /> <span>{t.rich('acceptPrivacy', { link: (text) => <a href="/legal/privacy" target="_blank" rel="noreferrer">{text}</a> })}</span>
           </label>
           <label className="check">
             <input type="checkbox" name="age18" /> <span>{t('confirmAge')}</span>

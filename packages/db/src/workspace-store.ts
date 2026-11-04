@@ -8,6 +8,8 @@ export interface WorkspaceRow {
   currency: Currency;
   timezone: string;
   protectedReserveMinor: number;
+  stsCountSavingsTransfers: boolean;
+  version: number;
   status: 'active' | 'deletion_pending' | 'purged';
   deletionRequestedAt: string | null;
 }
@@ -29,9 +31,11 @@ export async function getWorkspace(db: Db, workspaceId: string): Promise<Workspa
     currency: Currency;
     timezone: string;
     protected_reserve_minor: string;
+    sts_count_savings_transfers: boolean;
+    version: number;
     status: WorkspaceRow['status'];
     deletion_requested_at: Date | null;
-  }>('SELECT id, name, currency, timezone, protected_reserve_minor::text, status, deletion_requested_at FROM fin.workspaces WHERE id = $1', [workspaceId]);
+  }>('SELECT id, name, currency, timezone, protected_reserve_minor::text, sts_count_savings_transfers, version, status, deletion_requested_at FROM fin.workspaces WHERE id = $1', [workspaceId]);
   const row = result.rows[0];
   if (!row) throw new Error('No workspace in the current context');
   return {
@@ -40,6 +44,8 @@ export async function getWorkspace(db: Db, workspaceId: string): Promise<Workspa
     currency: row.currency,
     timezone: row.timezone,
     protectedReserveMinor: Number(row.protected_reserve_minor),
+    stsCountSavingsTransfers: row.sts_count_savings_transfers,
+    version: row.version,
     status: row.status,
     deletionRequestedAt: row.deletion_requested_at?.toISOString() ?? null,
   };

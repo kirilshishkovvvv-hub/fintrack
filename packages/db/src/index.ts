@@ -6,6 +6,7 @@ export * from './import-store.ts';
 export * from './ledger-store.ts';
 export * from './lifecycle-store.ts';
 export * from './payee-store.ts';
+export * from './settings-store.ts';
 export * from './reconciliation-store.ts';
 // The migration runner is imported directly (scripts, tests): it reads files from disk and
 // isn't part of the runtime that the web server bundles.

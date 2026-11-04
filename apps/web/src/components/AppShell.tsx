@@ -35,7 +35,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
       <main id="main" className="shell">
         {children}
-        <p className="footer-note">{t('app.notFinancialAdvice')}</p>
+        <p className="footer-note">
+          {t('app.notFinancialAdvice')} <Link href="/legal/terms">{t('app.legalLink')}</Link>
+        </p>
       </main>
       <nav className="bottom-nav" aria-label="Main">
         {NAV.map((item) => (

@@ -7,7 +7,8 @@
     "retry": "Try again",
     "cancel": "Cancel",
     "genericError": "Something went wrong. Try again in a moment.",
-    "notFinancialAdvice": "Figures are estimates based on the data you enter. This isn't financial advice."
+    "notFinancialAdvice": "Figures are estimates based on the data you enter. This isn't financial advice.",
+    "legalLink": "Terms and privacy"
   },
   "nav": {
     "dashboard": "Home",
@@ -20,8 +21,8 @@
     "email": "Email",
     "password": "Password",
     "passwordHint": "At least 12 characters. A short sentence works well.",
-    "acceptTerms": "I accept the Terms of service",
-    "acceptPrivacy": "I've read the Privacy notice",
+    "acceptTerms": "I accept the <link>Terms of service</link>",
+    "acceptPrivacy": "I've read the <link>Privacy notice</link>",
     "confirmAge": "I'm 18 or older",
     "marketing": "Send me occasional product news (optional)",
     "submit": "Create account",
@@ -164,7 +165,11 @@
     "minAmount": "Smallest amount",
     "maxAmount": "Largest amount",
     "source": "Source",
-    "origins": { "manual": "Entered by hand", "import": "Imported", "system": "Added by the app" },
+    "origins": {
+      "manual": "Entered by hand",
+      "import": "Imported",
+      "system": "Added by the app"
+    },
     "reconciledState": "Reconciled",
     "reconciledYes": "Reconciled",
     "reconciledNo": "Not reconciled",
@@ -281,7 +286,8 @@
     "unlockWarning": "Unlocking lets you change the transactions in this reconciliation and any later one on this account. They'll be marked as needing to be redone until you reconcile again. The unlock is recorded.",
     "unlockConfirm": "Yes, unlock",
     "unlockedNotice": "Unlocked. Reconcile again once your corrections are done.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "edit": "Edit"
   },
   "reconcile": {
     "title": "Reconcile {account}",
@@ -328,7 +334,24 @@
     "mergeInto": "Merge into",
     "mergeSubmit": "Merge",
     "merged": "{from} was merged into {into}.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "addTitle": "Add a category",
+    "name": "Name",
+    "kind": "Type",
+    "parent": "Under",
+    "noParent": "Nothing (top level)",
+    "add": "Add",
+    "added": "{name} added.",
+    "nameRequired": "Enter a name.",
+    "edit": "Edit",
+    "editNamed": "Edit {name}",
+    "editTitle": "Edit {name}",
+    "save": "Save",
+    "saved": "{name} saved.",
+    "moved": "{name} moved.",
+    "moveUp": "Move {name} up",
+    "moveDown": "Move {name} down",
+    "moveWarning": "Moving a subcategory also moves its past spending to the new parent in reports. Amounts stay the same."
   },
   "settings": {
     "title": "Your data and privacy",
@@ -343,7 +366,15 @@
     "audit": "Activity log",
     "auditHint": "Sign-ins and changes to your account. Never amounts.",
     "delete": "Delete my account",
-    "deleteHint": "Remove your account and all your data."
+    "deleteHint": "Remove your account and all your data.",
+    "general": "General",
+    "generalHint": "Protected reserve, time zone and currency.",
+    "profile": "Profile and emails",
+    "profileHint": "Your email address, language and product news.",
+    "categories": "Categories",
+    "categoriesHint": "Add, rename, move, merge or archive them.",
+    "legal": "Terms and privacy",
+    "legalHint": "Terms, privacy notice, cookies and who runs this service."
   },
   "forgotPassword": {
     "title": "Reset your password",
@@ -485,7 +516,12 @@
       "import_confirmed": "Import confirmed",
       "import_undone": "Import undone",
       "import_discarded": "Import discarded",
-      "import_kept_both": "Possible duplicate kept as a separate transaction"
+      "import_kept_both": "Possible duplicate kept as a separate transaction",
+      "account_updated": "Account changed",
+      "account_opening_changed": "Opening balance changed",
+      "category_updated": "Category changed",
+      "workspace_updated": "Settings changed",
+      "consent_changed": "Email preference changed"
     },
     "other": "Other activity"
   },
@@ -671,6 +707,167 @@
     "LEDGER_RULE": "That can't be saved: it breaks a bookkeeping rule.",
     "VALIDATION_FAILED": "Check the highlighted fields.",
     "INVALID_REFERENCE": "Something you picked no longer exists. Reload and try again.",
-    "futureDate": "Use today or an earlier date. Plan future items separately."
+    "futureDate": "Use today or an earlier date. Plan future items separately.",
+    "OPENING_DATE_TOO_LATE": "This account has transactions before that date, including any voided or in the trash. Choose an earlier date.",
+    "CURRENCY_LOCKED": "The currency can't change once you have transactions."
+  },
+  "editAccount": {
+    "title": "Edit {name}",
+    "name": "Name",
+    "type": "Type",
+    "spendable": "Counts towards Safe to Spend",
+    "spendableGoal": "This account is set aside for a goal, so it can't count towards Safe to Spend.",
+    "cardReserve": "Set aside the amount owed on this card from Safe to Spend",
+    "institution": "Bank or provider (optional)",
+    "creditLimit": "Credit limit (optional)",
+    "creditLimitHint": "For your information only.",
+    "notes": "Notes (optional)",
+    "badAmount": "Enter an amount like 12.50.",
+    "save": "Save",
+    "saved": "Saved.",
+    "moveUp": "Move up in the list",
+    "moveDown": "Move down in the list",
+    "moved": "Moved.",
+    "openingTitle": "Opening balance",
+    "openingIntro": "Change this only to correct where you started. Balances from this date on shift by the difference. Income and spending stay the same.",
+    "openingAmount": "Balance on the opening date",
+    "openingOwed": "Amount owed on the opening date",
+    "openingDate": "Opening date",
+    "openingHeld": "A finished reconciliation includes this opening balance. Changing it marks that reconciliation, and any later one, as broken until you reconcile again.",
+    "openingSave": "Change opening balance",
+    "openingSaved": "Opening balance changed.",
+    "archivedNote": "Unarchive this account to change its opening balance."
+  },
+  "general": {
+    "title": "General",
+    "name": "Name of this space",
+    "reserve": "Protected reserve",
+    "reserveHint": "Money you never want to count as spendable. Safe to Spend leaves it out.",
+    "timezone": "Time zone",
+    "timezoneHint": "Decides what \"today\" and the start of a month mean for your figures.",
+    "currency": "Currency",
+    "currencyLocked": "The currency can't change once you have transactions.",
+    "badAmount": "Enter an amount like 250.00.",
+    "save": "Save",
+    "saved": "Saved."
+  },
+  "profile": {
+    "title": "Profile and emails",
+    "email": "Email address",
+    "changeEmail": "Change it under Sign-in and security",
+    "language": "Language",
+    "languageValue": "English",
+    "languageHint": "More languages will be added later.",
+    "marketing": "Send me occasional product news",
+    "marketingHint": "Optional. Emails about your account and its security are always sent.",
+    "saved": "Saved."
+  },
+  "legal": {
+    "draftTitle": "Draft",
+    "draft": "This page is a draft and hasn't been reviewed by a lawyer. Sections marked as not written yet will be completed before the public launch.",
+    "notWritten": "Not written yet.",
+    "needsDetails": "To be supplied before launch.",
+    "version": "Version: {version}",
+    "nav": {
+      "terms": "Terms of service",
+      "privacy": "Privacy notice",
+      "cookies": "Cookies",
+      "imprint": "Who runs this service"
+    },
+    "terms": {
+      "title": "Terms of service",
+      "sections": [
+        {
+          "heading": "Not financial advice",
+          "body": "This app helps you record and understand your own money. It gives no personal investment or credit recommendations. Safe to Spend and any projection are estimates based on the data you enter."
+        },
+        {
+          "heading": "Age",
+          "body": "You must be 18 or older to use this service."
+        },
+        {
+          "heading": "Rules of use"
+        },
+        {
+          "heading": "Liability"
+        },
+        {
+          "heading": "Changes to these terms"
+        },
+        {
+          "heading": "Ending your account",
+          "body": "You can delete your account in the app at any time, after a 7-day window in which you can cancel. You can export your data first."
+        },
+        {
+          "heading": "Law and jurisdiction"
+        }
+      ]
+    },
+    "privacy": {
+      "title": "Privacy notice",
+      "sections": [
+        {
+          "heading": "What we collect, and why"
+        },
+        {
+          "heading": "Where it is kept, and for how long"
+        },
+        {
+          "heading": "Service providers we use"
+        },
+        {
+          "heading": "Your rights",
+          "body": "In the app you can export your data, see your activity log and delete your account. Other requests are handled by email."
+        },
+        {
+          "heading": "How to contact us"
+        }
+      ]
+    },
+    "cookies": {
+      "title": "Cookies",
+      "intro": "We use only cookies the service needs to work, so there is no cookie banner. We use no analytics or advertising cookies.",
+      "list": [
+        {
+          "name": "better-auth.session_token",
+          "purpose": "Keeps you signed in."
+        },
+        {
+          "name": "better-auth.two_factor",
+          "purpose": "Remembers that you are part-way through signing in with a two-factor code."
+        },
+        {
+          "name": "better-auth-passkey",
+          "purpose": "Holds the one-time challenge while you sign in with or add a passkey."
+        },
+        {
+          "name": "fintrack.known_device",
+          "purpose": "Recognises this device, so we can email you when someone signs in from a new one."
+        }
+      ],
+      "nameHeading": "Cookie",
+      "purposeHeading": "What it does",
+      "sections": []
+    },
+    "imprint": {
+      "title": "Who runs this service",
+      "sections": [
+        {
+          "heading": "Legal name"
+        },
+        {
+          "heading": "Address"
+        },
+        {
+          "heading": "Company registration number"
+        },
+        {
+          "heading": "VAT number, if applicable"
+        },
+        {
+          "heading": "Contact email"
+        }
+      ]
+    }
   }
 }

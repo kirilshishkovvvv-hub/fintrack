@@ -34,6 +34,38 @@ export const createAccountBody = z.strictObject({
   cardReserve: z.boolean().optional(),
 });
 
+export const updateAccountBody = z.strictObject({
+  name: text(100).optional(),
+  type: z.enum(accountTypes).optional(),
+  spendable: z.boolean().optional(),
+  cardReserve: z.boolean().optional(),
+  institution: z.string().trim().max(100).nullable().optional(),
+  creditLimit_minor: z.number().int().min(0).max(MAX_ABS_CENTS).nullable().optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+});
+
+export const openingBody = z
+  .strictObject({
+    openingDate: isoDate.optional(),
+    openingAmount_minor: z.number().int().min(-MAX_ABS_CENTS).max(MAX_ABS_CENTS).optional(),
+  })
+  .refine((body) => body.openingDate !== undefined || body.openingAmount_minor !== undefined, 'Nothing to change');
+
+export const orderBody = z.strictObject({ ids: z.array(id).min(1).max(1000) });
+
+export const updateCategoryBody = z.strictObject({ name: text(100).optional(), parentId: id.nullable().optional() });
+
+export const updateWorkspaceBody = z.strictObject({
+  name: text(100).optional(),
+  timezone: z.string().max(64).refine(isTimeZone, 'Unknown time zone').optional(),
+  protectedReserve_minor: z.number().int().min(0).max(MAX_ABS_CENTS).optional(),
+  stsCountSavingsTransfers: z.boolean().optional(),
+  currency: z.enum(['EUR', 'USD']).optional(),
+});
+
+/** The only consent a user changes after sign-up (Annex L item 6). */
+export const consentBody = z.strictObject({ document: z.literal('marketing'), accepted: z.boolean() });
+
 export const createCategoryBody = z.strictObject({
   name: text(100),
   kind: z.enum(['income', 'expense']),

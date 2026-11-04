@@ -17,6 +17,8 @@ import {
 } from '@fintrack/domain';
 import {
   changeTransactionStatus,
+  accountDetails,
+  categoryMeta,
   createWorkspace,
   ensurePayee,
   findCategoryBySystemKey,
@@ -57,7 +59,7 @@ import type {
 } from './schemas.ts';
 import { DEFAULT_CATEGORIES } from './seed.ts';
 
-const CLASS_BY_TYPE: Record<AccountType, AccountClass> = {
+export const CLASS_BY_TYPE: Record<AccountType, AccountClass> = {
   current: 'cash',
   savings: 'cash',
   cash: 'cash',
@@ -116,6 +118,8 @@ export function workspaceDto(workspace: WorkspaceRow) {
     currency: workspace.currency,
     timezone: workspace.timezone,
     protectedReserve_minor: workspace.protectedReserveMinor,
+    stsCountSavingsTransfers: workspace.stsCountSavingsTransfers,
+    version: workspace.version,
     status: workspace.status,
     /** When a requested deletion goes through (GAP-5). */
     purgeAfter: workspace.deletionRequestedAt
@@ -171,10 +175,13 @@ export async function listAccounts(db: Db, context: RequestContext) {
   const chart = await loadChart(db, context.workspaceId);
   const ledger = new Ledger(chart, await loadTransactions(db, context.workspaceId));
   const today = todayIn(workspace.timezone);
+  const details = await accountDetails(db, context.workspaceId);
+  const order = (account: LedgerAccount) => details.get(account.id)?.sortOrder ?? 0;
   return chart
     .all()
     .filter((account) => account.account)
-    .map((account) => accountDto(ledger, account, today));
+    .sort((a, b) => order(a) - order(b))
+    .map((account) => ({ ...accountDto(ledger, account, today), version: details.get(account.id)?.version ?? 1 }));
 }
 
 export function accountDto(ledger: Ledger, account: LedgerAccount, today: string) {
@@ -206,14 +213,18 @@ export async function createCategory(db: Db, context: RequestContext, input: z.i
 }
 
 export async function listCategories(db: Db, context: RequestContext) {
-  return (await loadChart(db, context.workspaceId))
-    .all()
-    .filter((account) => account.category)
-    .map(categoryDto);
+  const meta = await categoryMeta(db, context.workspaceId);
+  const order = (account: LedgerAccount) => meta.get(account.id)?.sortOrder ?? 0;
+  const all = (await loadChart(db, context.workspaceId)).all().filter((account) => account.category);
+  const inOrder = (parentId: string | undefined) => all.filter((account) => account.category!.parentId === parentId).sort((a, b) => order(a) - order(b));
+  // Each parent is followed by its subcategories.
+  return inOrder(undefined)
+    .flatMap((parent) => [parent, ...inOrder(parent.id)])
+    .map((account) => categoryDto(account, meta.get(account.id)));
 }
 
-export function categoryDto(account: LedgerAccount) {
-  return { id: account.id, name: account.name, kind: account.kind, parentId: account.category?.parentId ?? null, archived: account.archived ?? false };
+export function categoryDto(account: LedgerAccount, meta?: { version: number }) {
+  return { id: account.id, name: account.name, kind: account.kind, parentId: account.category?.parentId ?? null, archived: account.archived ?? false, version: meta?.version ?? 1 };
 }
 
 // ---------------------------------------------------------------------------
