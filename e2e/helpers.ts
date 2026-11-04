@@ -25,8 +25,13 @@ export const test = base.extend({
       colorScheme,
       extraHTTPHeaders: { 'x-forwarded-for': `10.9.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}` },
     });
+    const missing: string[] = [];
+    context.on('console', (message) => {
+      if (message.text().includes('MISSING_MESSAGE')) missing.push(message.text());
+    });
     await use(context);
     await context.close();
+    expect(missing, 'AC-22.1: no missing translation on screen').toEqual([]);
   },
 });
 export { expect, type Browser };

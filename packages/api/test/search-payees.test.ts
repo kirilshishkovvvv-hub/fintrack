@@ -89,6 +89,16 @@ describe('search and filter (BR-04.5)', () => {
     expect(result.items[0].effect_minor).toBe(0);
   });
 
+  test('AC-22.4: search ignores case and accents in Latin, Greek and Cyrillic', async () => {
+    const { expense, search } = await setUp();
+    await expense('2026-03-05', 'Food', 100, { description: 'Café Müller' });
+    await expense('2026-03-06', 'Food', 100, { description: 'Καφές στο σπίτι' });
+    await expense('2026-03-07', 'Food', 100, { description: 'Кафе Ален мак' });
+    for (const [query, count] of [['cafe', 1], ['CAFÉ', 1], ['muller', 1], ['καφες', 1], ['ΚΑΦΈΣ', 1], ['σπιτι', 1], ['кафе', 1], ['АЛЕН', 1], ['nothing', 0]] as const) {
+      expect((await search(`q=${encodeURIComponent(query)}`)).count, query).toBe(count);
+    }
+  });
+
   test('a bad filter is refused, not ignored', async () => {
     const { client } = await seeded();
     for (const query of ['nonsense=1', 'kind=everything', 'from=2026-04-01&to=2026-03-01', 'limit=99999', 'cursor=abc', 'accountId=not-an-id']) {

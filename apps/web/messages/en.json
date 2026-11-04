@@ -14,7 +14,8 @@
     "dashboard": "Home",
     "transactions": "Activity",
     "add": "Add",
-    "accounts": "Accounts"
+    "accounts": "Accounts",
+    "label": "Main"
   },
   "signUp": {
     "title": "Create your account",
@@ -339,7 +340,7 @@
     "name": "Name",
     "kind": "Type",
     "parent": "Under",
-    "noParent": "Nothing (top level)",
+    "noParent": "Top level",
     "add": "Add",
     "added": "{name} added.",
     "nameRequired": "Enter a name.",
@@ -736,7 +737,8 @@
     "openingHeld": "A finished reconciliation includes this opening balance. Changing it marks that reconciliation, and any later one, as broken until you reconcile again.",
     "openingSave": "Change opening balance",
     "openingSaved": "Opening balance changed.",
-    "archivedNote": "Unarchive this account to change its opening balance."
+    "archivedNote": "Unarchive this account to change its opening balance.",
+    "back": "Back to the account"
   },
   "general": {
     "title": "General",
@@ -868,6 +870,7 @@
           "heading": "Contact email"
         }
       ]
-    }
+    },
+    "navLabel": "Other legal pages"
   }
 }

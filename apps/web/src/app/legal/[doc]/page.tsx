@@ -62,7 +62,7 @@ export default function LegalPage() {
             {section.body ? <p>{section.body}</p> : <p className="muted">{missing}</p>}
           </section>
         ))}
-        <nav aria-label={t('draftTitle')} className="actions" style={{ marginTop: '1rem' }}>
+        <nav aria-label={t('navLabel')} className="actions" style={{ marginTop: '1rem' }}>
           {DOCUMENTS.filter((other) => other !== doc).map((other) => (
             <Link key={other} href={`/legal/${other}`} className="small">
               {t(`nav.${other}`)}

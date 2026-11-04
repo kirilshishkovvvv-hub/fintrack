@@ -1,6 +1,6 @@
 # Decisions
 
-The important decisions, with why and their status. Full reasoning: Stage 1 §2 and §14, Stage 2 §14 and Annex R. Smaller technical choices (T-1 to T-52) are in [docs/progress-log.md](docs/progress-log.md); only those that matter across the project appear here.
+The important decisions, with why and their status. Full reasoning: Stage 1 §2 and §14, Stage 2 §14 and Annex R. Smaller technical choices (T-1 to T-69) are in [docs/progress-log.md](docs/progress-log.md); only those that matter across the project appear here.
 
 **Status:** ✅ confirmed by the user · 🔧 provisional: my technical choice inside the approved design, reversible · ❓ unresolved.
 
@@ -10,12 +10,14 @@ The important decisions, with why and their status. Full reasoning: Stage 1 §2 
 |---|---|---|---|
 | D-1 | **AD-09 approved Drizzle; the code uses raw parameterized SQL.** T-3 said Drizzle would come with the API. It never did, and I didn't flag that | Approve the raw SQL: it's working and tested, and it's close to what the row-level security and triggers need. Adding Drizzle now means rewriting every store with no gain in correctness. **Not changed without your OK** | User |
 | D-2 | Stage 1 §12.2 makes "export round-trip passes" a Stage 4 exit criterion, while AC-17.4 calls re-importing a Should | Treat it as a Should, and record that | User |
-| D-3 | Finish the missing Stage 4 Must items before Stage 5? | Yes (PROGRESS.md) | User |
 | D-4 | Should the plain, unencrypted export stay available? | Yes, labelled, because spreadsheets need it | User |
 | D-5 | Final product name and domain | Before launch: passkeys bind to the domain, and ads need a trademark check | User |
 | D-6 | OK to record TR-01 to TR-20 (Annex L) in the Stage 1 spec | Yes | User |
 | D-7 | OD-17 (multiple workspaces), OD-18 (USD display per locale), OD-04 (matching tolerances, to validate on real data) | Non-blocking | Later |
 | D-8 | Open-banking provider for release 1.1 (AD-23) | Quotes and a contract needed | User, later |
+| D-10 | **The approved documents conflict.** BR-03.6 lets an account's type change within its class; Stage 2 §9.2 says type and class are immutable once postings exist | Keep BR-03.6, as built: it changes no balance, and users correct a wrong type. Fix the Stage 2 line | User |
+| D-11 | BR-05.6: import maps descriptions to payees through user-editable rules. Stage 2 has no table or route for this, so it isn't built (T-59) | Build it with the rules work in Stage 5 (FR-16 rules), or after real bank files show the need | User |
+| D-12 | BR-05.4 allows deleting an unused category. Stage 2 §9.2 has no such route, so only archive and merge exist | Accept it for the first release: archiving does the same job for the user | User |
 | D-9 | Legal: LQ-01 to LQ-08, LQ-10. Includes keeping or erasing consent records after deletion, and whether the kept audit trail is personal data | A lawyer before launch | Lawyer |
 
 ## Product
@@ -36,6 +38,7 @@ The important decisions, with why and their status. Full reasoning: Stage 1 §2 
 | Annex L | 2 Nov | Legal and trust list, TR-01 to TR-20, mapped to stages | User's list | ✅ list; recording in Stage 1 is D-6 |
 | Visuals | 2 Nov | Comparable to leading apps, original, usable in ads | User decision | ✅ |
 | PK-1 | 4 Nov | Passkeys in the first release. **Supersedes** "later" in §3.6; password stays as backup | User decision: easier sign-in | ✅ |
+| D-3 | 4 Nov | Finish the missing Stage 4 items before Stage 5 | User decision | ✅ |
 | Encrypted export | 4 Nov | AES-256 export with the customer's own password as the main path | User's concern about unprotected bank data | ✅ (detail: D-4) |
 
 ## Architecture
@@ -52,7 +55,7 @@ The important decisions, with why and their status. Full reasoning: Stage 1 §2 
 | AD-10 | Postgres-backed job queue in a worker | No extra service | ✅; not built |
 | AD-11 to 13 | Sentry EU; Scaleway email, SES fallback; Hetzner daily backups | EU; independent copy | ✅ 2 Nov; not set up |
 | AD-14 | Idle 30 minutes, 14 days if chosen, 30 days at most | Fills gap X-3 | ✅ 2 Nov |
-| **AD-15** | **Optional 2FA ships at launch. Supersedes A-6 ("Should")** | Resolves contradiction X-2 | ✅ 2 Nov; **screens not built.** My 4 Nov note that this was the user's call was wrong |
+| **AD-15** | **Optional 2FA ships at launch. Supersedes A-6 ("Should")** | Resolves contradiction X-2 | ✅ 2 Nov; screens built 4 Nov. My 4 Nov note that this was the user's call was wrong |
 | AD-16 | Authorization in services and the database, never in middleware | CVE-2025-29927 | ✅ |
 | AD-17 | No cached summaries unless NFR-03 tests fail | Nothing can drift | ✅ |
 | AD-18 | UUID version 7 | Unguessable; good for indexes | ✅ |
@@ -81,3 +84,7 @@ Inside the design, and reversible unless noted. Each is in the progress log.
 | T-44 | Two-step import upload | Stage 2 §9.2 single call | 🔧 |
 | T-46 | Accepting a pair turns the existing entry into the one transfer; undo restores it | BR-16.5 detail | 🔧 |
 | T-51 | Passkey sign-ins use the 30-minute idle limit | — | 🔧 |
+| T-57 | How AC-04.5's total treats transfers and voided lines | AC-04.5 wording | 🔧 |
+| T-60, T-63 | Added routes: account detail, opening balance, reorder | Stage 2 §9.2 | 🔧 |
+| T-61 | A date-only change also breaks a reconciliation | E-03 wording | 🔧 |
+| T-64 | `PATCH /me` not built while only English is on | Stage 2 §9.2 | 🔧 temporary |

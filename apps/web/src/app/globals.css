@@ -85,7 +85,7 @@ p { margin: 0 0 0.75rem; }
 form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
 label { font-weight: 500; font-size: 0.95rem; }
-input[type='text'], input[type='email'], input[type='password'], input[type='date'], input[type='month'], select {
+input[type='text'], input[type='email'], input[type='password'], input[type='date'], input[type='month'], input[type='search'], textarea, select {
   width: 100%; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 0.65rem 0.75rem; min-height: 44px;
 }
@@ -151,6 +151,8 @@ input[type='file'] { font: inherit; max-width: 100%; }
 /* A row with several buttons: on a narrow screen they go under the text instead of squeezing it away. */
 .row-stack { flex-wrap: wrap; }
 .row-stack .row-main { flex: 1 1 12rem; }
+.row-stack .actions { gap: 0.15rem; }
+.row-stack .btn { padding: 0.4rem 0.55rem; min-height: 36px; }
 
 .date-heading { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin: 0.75rem 0 0; }
 

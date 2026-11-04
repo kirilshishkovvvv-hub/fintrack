@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { AppShell, LoadError } from '@/components/AppShell';
 import { TransactionRow } from '@/components/TransactionRow';
 import { api } from '@/lib/api';
-import { formatMoney, parseUserAmount } from '@/lib/money';
+import { formatDay, formatMoney, parseUserAmount } from '@/lib/money';
 import { currentMonth, loadAccounts, loadCategories, loadSummary, useApiData, type Transaction } from '@/lib/use-api';
 
 interface SearchResult {
@@ -38,6 +38,7 @@ const KINDS = ['expense', 'income', 'transfer', 'refund', 'debt_payment', 'split
 function Activity() {
   const t = useTranslations('transactions');
   const tApp = useTranslations('app');
+  const locale = useLocale();
   const params = useSearchParams();
   const month = currentMonth();
   const [filters, setFilters] = useState<Filters>({
@@ -251,9 +252,9 @@ function Activity() {
             <p className="small muted">{selectedAccount ? t('totalNoteAccount') : t('totalNote')}</p>
             {groups.map((group) => (
               <div key={group.date}>
-                <h2 className="date-heading">{group.date}</h2>
+                <h2 className="date-heading">{formatDay(group.date, locale)}</h2>
                 {group.items.map((tx) => (
-                  <TransactionRow key={tx.id} tx={tx} accounts={accounts} categories={categories} currency={data.currency} effect={selectedAccount ? tx.effect_minor : undefined} />
+                  <TransactionRow key={tx.id} tx={tx} accounts={accounts} categories={categories} currency={data.currency} effect={selectedAccount ? tx.effect_minor : undefined} hideDate />
                 ))}
               </div>
             ))}

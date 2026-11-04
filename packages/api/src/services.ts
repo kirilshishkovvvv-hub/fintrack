@@ -6,7 +6,7 @@ import {
   build,
   Ledger,
   safeToSpend,
-  normalizeDescription,
+  searchText,
   todayIn,
   validateTransaction,
   type AccountClass,
@@ -383,7 +383,7 @@ export async function listTransactions(db: Db, context: RequestContext, query: z
   const chart = await loadChart(db, context.workspaceId);
   const isOwn = (id: string) => chart.find(id)?.account !== undefined;
   const subtree = query.categoryId ? chart.categorySubtree(query.categoryId) : null;
-  const text = query.q ? normalizeDescription(query.q) : null;
+  const text = query.q ? searchText(query.q) : null;
 
   const effectOf = (tx: Transaction) => tx.postings.filter((p) => (query.accountId ? p.ledgerAccountId === query.accountId : isOwn(p.ledgerAccountId))).reduce((sum, p) => sum + p.amount, 0);
   /** The size a person would call this transaction: for a transfer, the amount moved. */
@@ -404,7 +404,7 @@ export async function listTransactions(db: Db, context: RequestContext, query: z
       if (query.maxAmount_minor !== undefined && sizeOf(tx) > query.maxAmount_minor) return false;
       if (text) {
         const lineNotes = tx.postings.map((p) => p.memo ?? '').join(' ');
-        if (!normalizeDescription(`${description ?? ''} ${memo ?? ''} ${payeeName ?? ''} ${lineNotes}`).includes(text)) return false;
+        if (!searchText(`${description ?? ''} ${memo ?? ''} ${payeeName ?? ''} ${lineNotes}`).includes(text)) return false;
       }
       return true;
     })

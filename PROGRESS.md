@@ -2,15 +2,14 @@
 
 **The current state only.** The dated history, with what each test proved, is in [docs/progress-log.md](docs/progress-log.md). Update this file whenever the state changes, and before context runs out.
 
-_Last verified against the code: 4 Nov 2026, commit `6e4edc9`._
+_Last verified against the code: 4 Nov 2026, see "Test results"._
 
 ## Handoff
 
-- **Current stage:** Stage 4 (core application) plus the import work moved forward (AP-15). **Not finished:** see "Missing from Stage 4".
-- **Current task:** finishing the missing Stage 4 items, in the order of "Next steps" (user decision, 4 Nov 2026).
-- **Done in this task:** password reset, change password and email, sign out everywhere, 2FA screens, new-device notice (`224b0c3`).
-- **Next action:** full transaction form (refund, debt payment, split, duplicate, line memos), then search, settings, payees, legal pages.
-- **Don't:** start Stage 5 until the list is finished. New queries stay plain SQL until decision D-1.
+- **Current stage:** Stage 4 (core application) plus the import work moved forward (AP-15). **The buildable list is finished. Stage 4's exit isn't complete:** see "What still stands between Stage 4 and done".
+- **Current task:** none in progress. The Stage 4 report went to the user.
+- **Next action:** get D-2 (export round trip), then run the Safe to Spend user test plan with the user (Stage 2 §17.2), then Stage 5.
+- **Don't:** new queries stay plain SQL until decision D-1.
 
 ## Correction to an earlier report
 
@@ -22,7 +21,7 @@ On 4 Nov I told the user "Stage 4 is built" and described 2FA as optional for th
 |---|---|
 | 1 Requirements, 2 Architecture | ✅ Approved 2 Nov 2026 |
 | 3 Ledger core, login, isolation | ✅ Built, except staging (needs a Render account) |
-| 4 Core application | 🟡 Most built; Must items missing |
+| 4 Core application | 🟡 Built and tested; exit blocked on D-2 and staging; legal text needs a lawyer |
 | 7 Import (moved forward, AP-15) | 🟡 Built, except matching to planned bills (needs Stage 5) and real bank files |
 | 5 Planning, full Safe to Spend | ⏳ Not started |
 | 6 Reports | ⏳ Not started |
@@ -42,40 +41,48 @@ On 4 Nov I told the user "Stage 4 is built" and described 2FA as optional for th
 | Export with AES-256 option | API tests; Windows `tar` | `packages/api/src/export.ts` |
 | Activity log; account deletion with purge function | API and browser tests | `packages/api/src/deletion.ts`, `packages/db/src/deletion-store.ts` |
 | CSV import: detect, map, classify, review, confirm, undo | Unit, API and browser tests | `packages/domain/src/csv-import.ts`, `packages/api/src/imports.ts`, `apps/web/src/app/import` |
-| Screens | Browser tests with axe | `apps/web/src/app` |
+| Full transaction form: refund, debt payment, split, percent split, line notes, duplicate | API and browser tests | `apps/web/src/components/TransactionForm.tsx` |
+| Password reset and change, email change, sign out everywhere, 2FA, new-device notice | API and browser tests | `auth.ts`, `apps/web/src/app/settings/security` |
+| Search and filter with a server total; accent-insensitive; paged | API and browser tests, including isolation (GT-59) | `listTransactions` in `services.ts`, `apps/web/src/app/transactions/page.tsx` |
+| Payees: from entry and import, default category, merge | API and browser tests | `packages/db/src/payee-store.ts`, `catalog.ts` |
+| Uncategorized total on the dashboard (current month, T-69) | API and browser tests | `summary` in `services.ts` |
+| Account editing, opening balance (E-03), display order | API and browser tests | `packages/api/src/settings.ts` |
+| Category add, rename, move, reorder | API and browser tests | `settings.ts`, `apps/web/src/app/categories` |
+| Protected reserve, time zone, currency lock; marketing consent | API and browser tests | `settings.ts`, `apps/web/src/app/settings` |
+| Legal page shells, marked as drafts, linked from sign-up and the footer | Browser tests | `apps/web/src/app/legal` |
+| No missing translations (AC-22.1) | Source check and browser guard | `apps/web/test/messages.test.ts` |
+| Screens | Browser tests with axe, at 1280 and 360 px | `apps/web/src/app` |
 
 ## Test results (actual)
 
 | Check | Result | When |
 |---|---|---|
-| `npm test` | 229 passed, 10 todo, 0 failed, 13 files | 4 Nov 2026, re-run for this document |
-| `npm run typecheck` | Clean | 4 Nov 2026, re-run for this document |
-| `npm run e2e` | 22 passed (11 journeys × desktop, phone) | 4 Nov 2026, at `cec68b2`; no code has changed since |
-| `next build` | Succeeded | 4 Nov 2026, before the last test-only change |
+| `npm test` | 283 passed, 10 todo, 0 failed, 18 files | 4 Nov 2026 |
+| `npm run typecheck` | Clean | 4 Nov 2026 |
+| `npm run e2e` | 46 passed in the last full run; 2 added after it (the Uncategorized notice) passed on their own. **One failure seen once, not explained:** see "Known issues" | 4 Nov 2026 |
+| `next build` | Succeeded, with dummy settings | 4 Nov 2026 |
 
-**Golden tests, 71 in total.** With an automated test: GT-01 to 09, 11 to 15, 17 to 19, 21 to 27, 35, 36, 38 (ledger part), 39, 40 to 45, 59 (not search), 70, 71. **Not yet:** GT-10, 16, 20, 28 to 34, 37, 46 to 58, 60 to 69. Only some of these appear as "todo" in the test run, although `packages/golden/src/index.ts` says the list is complete.
+**Golden tests, 71 in total.** With an automated test: GT-01 to 09, 11 to 15, 17 to 19, 21 to 27, 35, 36, 38 (ledger part), 39, 40 to 45, 59 (search included), 70, 71. **Not yet:** GT-10, 16, 20, 28 to 34, 37, 46 to 58, 60 to 69. Only some of these appear as "todo" in the test run, although `packages/golden/src/index.ts` says the list is complete.
 
 **Never tested:** real bank files; real phones, Windows Hello or fingerprint readers; opening an encrypted export in 7-Zip, Windows Explorer or macOS; a manual screen-reader pass; the production email path; load at 50,000 transactions.
 
-## Missing from Stage 4
+## What still stands between Stage 4 and done
 
-Checked by searching the routes and screens on 4 Nov 2026. "API" means it exists without a screen.
+Checked against Stage 1 §12.2 and §13, and Stage 2 §9.2, on 4 Nov 2026.
 
-| Must item | State |
-|---|---|
-| Refund, debt payment and split entry; editing them (FR-04, FR-06) | API only for entry; no edit form |
-| Search and filter with a server total (BR-04.5, AC-04.5); GT-59 search | Only a month picker; lists aren't paged |
-| Edit an account; change an opening balance (E-03) | No route or screen |
-| Add or rename a category | Add is API only; rename is missing |
-| Workspace settings: protected reserve, time zone | No route or screen, so the reserve is always 0 |
-| Profile and language; withdraw marketing consent (`/me`, Annex L) | No route or screen |
-| Payees (FR-05) | Table only |
-| Legal pages linked from sign-up; business details (Annex L) | Tick boxes name the documents, with nothing to open. Texts need a lawyer |
-| Uncategorized total on screen (AC-05.3) | Not shown |
-| Export round trip (the §12.2 exit criterion; AC-17.4 is a Should) | Not built. The two conflict: see decisions |
+| Item | State | Needs |
+|---|---|---|
+| "Export round-trip passes" (§12.2 exit) | Not built; AC-17.4 calls it a Should | **D-2** |
+| Staging deploy (Stage 3 exit) | Not done | **Render account** |
+| Legal texts, business details (Annex L) | Draft shells only | **Lawyer; the user's details** |
+| "Schedule instead" offer on a future date (AC-04.4) | Date is refused, with a hint; nothing to schedule until Stage 5 | Stage 5 |
+| Tag filter (BR-04.5) | Tags are a Should and aren't built | Later |
+| Import rules for payees (BR-05.6); delete an unused category (BR-05.4); account type conflict | Not built, or built one way | **D-11, D-12, D-10** |
+| `PATCH /me`, unsubscribe route, `email_preferences` | Not built: one language, no name, no marketing email yet (T-64) | When those arrive |
 
 ## Known issues and limits
 
+- **One unexplained test failure.** The phone sign-up journey (`e2e/journeys.spec.ts:7`) failed once in a full run, with a list that should have been empty holding one item. That matches the accessibility check or the new missing-translation guard; the output didn't show which. It then passed 5 times alone and once in the next full run. Print the full failure if it returns.
 - **Purges aren't scheduled.** Trash and deletion purges are tested functions with no worker to run them, so the on-screen promises wouldn't be kept in production (Stage 8 at the latest).
 - **Drizzle isn't used**, though AD-09 approved it: see "Pending decisions".
 - **Production can't send email** yet: it throws until Scaleway is configured (`apps/web/src/server/app.ts`).
@@ -83,14 +90,15 @@ Checked by searching the routes and screens on 4 Nov 2026. "API" means it exists
 - Audit log retention (24 months) isn't implemented.
 - `'unsafe-inline'` in the browser security policy, to be replaced before launch (T-21).
 - Stage 2's generated route-by-route isolation matrix doesn't exist; isolation tests are hand-written. Property tests cover P1, P2 and P4 of P1 to P8.
-- The dashboard and API load all of a workspace's transactions per request; NFR-03 isn't measured (T-16).
+- The dashboard, API and search load all of a workspace's transactions per request; NFR-03 isn't measured (T-16, T-56).
 - Windows dev only: a `.next` file-lock error once (clear `apps/web/.next`), and occasional leftover test processes (T-52).
 
 ## Pending decisions and dependencies
 
 **From the user, needed now**
-1. **Drizzle:** add it as AD-09 approved, or approve the raw parameterized SQL now in use? Recommendation: approve what exists (see DECISIONS.md).
-2. **Order:** finish the Stage 4 list before Stage 5? Recommendation: yes for login, entry and settings items, because Stage 5 depends on them.
+1. **D-2, export round trip:** treat it as a Should (recommended), or build it before Stage 4 closes?
+2. **D-1, Drizzle:** approve the raw parameterized SQL in use (recommended), or add Drizzle as AD-09 approved?
+3. **D-10, D-11, D-12:** three small conflicts or gaps in the approved documents. See DECISIONS.md.
 
 **From the user, before launch**
 3. Render account (staging). Final name and domain (passkeys bind to the domain).
@@ -101,12 +109,6 @@ Checked by searching the routes and screens on 4 Nov 2026. "API" means it exists
 
 ## Next steps, in priority order
 
-1. Get decisions 1 and 2 above.
-2. Password reset and change-password screens, with tests (AC-01.3, AC-01.4).
-3. 2FA screens and journey (AD-15, Stage 2 §12.3).
-4. Refund, debt payment and split entry and editing.
-5. Search and filter with a server total; GT-59 search.
-6. Account editing, opening balance edits, category add and rename, workspace settings (protected reserve), `/me` and marketing consent.
-7. Payees, then the Uncategorized total.
-8. Re-check Stage 4 against §12.2 and report.
-9. Run the Safe to Spend user test plan with the user (Stage 2 §17.2), then Stage 5.
+1. Get the decisions above.
+2. Run the Safe to Spend user test plan with the user (Stage 2 §17.2).
+3. Stage 5: budgets, recurring rules, matching, goals, cards and debts, calendar, full Safe to Spend.

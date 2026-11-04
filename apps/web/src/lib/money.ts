@@ -34,6 +34,11 @@ export function parseUserAmount(input: string): number | null {
   }
 }
 
+/** A calendar date in the user's format. It has no time, so no time zone may shift it (A-2). */
+export function formatDay(iso: string, locale = 'en-GB'): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${iso}T00:00:00Z`));
+}
+
 export function formatMoney(minor: number, currency: string, locale = 'en-GB'): string {
   const formatter = new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' });
   // Intl.NumberFormat formats exact decimal strings (ES2023); the cast is only for older type definitions.

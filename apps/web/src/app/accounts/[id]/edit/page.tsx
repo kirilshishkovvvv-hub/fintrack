@@ -117,7 +117,7 @@ export default function EditAccountPage() {
   return (
     <AppShell>
       <p className="small">
-        <Link href={`/accounts/${id}`}>{tApp('back')}</Link>
+        <Link href={`/accounts/${id}`}>{t('back')}</Link>
       </p>
       <h1>{t('title', { name: account.name })}</h1>
       {error && (

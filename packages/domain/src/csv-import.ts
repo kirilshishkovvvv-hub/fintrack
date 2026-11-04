@@ -217,6 +217,11 @@ export function normalizeDescription(text: string): string {
   return text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+/** For search only (AC-22.4): "cafe" finds "Café", and Greek matches with or without accents. */
+export function searchText(text: string): string {
+  return normalizeDescription(text).normalize('NFD').replace(/\p{M}/gu, '').replace(/ς/g, 'σ');
+}
+
 // ---------------------------------------------------------------------------
 // Detecting the layout
 // ---------------------------------------------------------------------------

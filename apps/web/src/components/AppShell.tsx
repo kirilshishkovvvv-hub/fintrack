@@ -39,7 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {t('app.notFinancialAdvice')} <Link href="/legal/terms">{t('app.legalLink')}</Link>
         </p>
       </main>
-      <nav className="bottom-nav" aria-label="Main">
+      <nav className="bottom-nav" aria-label={t('nav.label')}>
         {NAV.map((item) => (
           <Link
             key={item.href}

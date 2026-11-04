@@ -308,6 +308,28 @@ GT-09 and GT-10, plus the import parts of GT-39 and GT-71 and the export and sea
 | T-17 | **Breached-password check** through Better Auth's Pwned Passwords plugin (k-anonymity, AD-19), switched off only in automated tests | No network calls during tests. | Easy |
 | T-18 | `memberships.user_id` has no foreign key to the auth user yet | It gets one with the account-deletion flow in Stage 4, so deletion order can be designed first. | Easy |
 
+### Stage 4 list, finished 4 Nov 2026
+
+| ID | Choice | Why | Reversal |
+|---|---|---|---|
+| T-53 | **A transaction shape the form can't show is voided or deleted and entered again**, not edited in a reduced form | The form must never silently drop a line of an unusual transaction. | Easy |
+| T-54 | **qrcode-svg 1.1.0** draws the 2FA QR code in the browser (MIT, no network) | The secret must not go to a third-party QR service. | Easy |
+| T-55 | **`fintrack.known_device` cookie** recognises a device for the new-device email | The email needs it; listed on the cookie page. | Easy |
+| T-56 | **Search runs in memory over the workspace's transactions, with cursor paging and the total worked out on the server** | Same approach as every other figure (T-16, AD-17). Not measured at 50,000 transactions (NFR-03). | Easy |
+| T-57 | **AC-04.5, "total equals the sum of the displayed lines", is read as:** with an account chosen, each line shows its effect and the total is their sum, over all matches and not only the loaded page. With all accounts, a transfer line shows the amount moved but counts 0, and the screen says so. Voided lines are shown and not counted | Adding a transfer's amount to a total of money in and out would be wrong. | Easy |
+| T-58 | **Payees: a name creates or finds the payee, ignoring case and spacing. A merged payee is archived; typing its name again brings it back as its own payee** | No alias table is approved. | Easy |
+| T-59 | **An import's "other party" column creates payees.** BR-05.6's user-editable rules mapping descriptions to payees aren't built: no approved table (D-11) | Not invented without approval. | — |
+| T-60 | **`POST /accounts/{id}/opening` is a separate route from `PATCH`, and `GET /accounts/{id}` is added** | Stage 2 §9.2 has no route for E-03; it changes the ledger and can break reconciliations. | Easy |
+| T-61 | **Changing the opening date alone also breaks a reconciliation holding it**, though E-03 names only a changed cleared balance | The lock (AC-18.2) covers the date, and a statement can't stay true of a date it now precedes. | Easy |
+| T-62 | **At 0, the opening transaction is voided; a later amount brings the same one back.** Transactions before a new opening date block it even when voided or in the trash | One per account (BR-03.2); a restore would otherwise break LR-04. | Easy |
+| T-63 | **Display order is set by `POST /accounts/order` and `/categories/order`**, with no version change. Added `accounts.sort_order` (migration 0009) | Order isn't content, and Stage 2 §9.2 has no reorder route. | Easy |
+| T-64 | **No display name or stored language yet: `PATCH /me` isn't built; `GET`/`POST /me/consents` are.** The language is shown read-only | Only English is on, nothing shows a name, and Annex L item 7 and PRV-01 ask for no name. | Easy |
+| T-65 | **The savings-transfer toggle (S-5) has an API field and no screen until Stage 5** | A switch with no visible effect would mislead. | Easy |
+| T-66 | **Legal pages hold only facts true of the code, and are marked as drafts.** Everything else says "Not written yet" | No invented legal text or business details (Annex L). | Easy |
+| T-67 | **AC-22.1 is checked by `apps/web/test/messages.test.ts` and a browser-test guard against `MISSING_MESSAGE`.** The source check covers literal keys, the part of a computed key before the variable, and text directly in JSX | Screenshots found a raw key that no test had caught. | Easy |
+| T-68 | **Search compares text with accents removed (`searchText`, AC-22.4)**, separately from `normalizeDescription`, which import fingerprints depend on | Changing the shared function would change fingerprints. | Easy |
+| T-69 | **The dashboard's Uncategorized notice covers the current month**, like the rest of the dashboard's activity (AC-05.3). The category filter finds older rows | One period per screen. | Easy |
+
 ### Added to the plan by you
 
 - **Passkeys (your decision, 4 Nov 2026):** sign-in with Face ID, Windows Hello or a fingerprint, on phones and computers. The device checks the face or finger; we store no biometric data. Password stays as the backup. This moves passkeys from "later" (Stage 1 §12) into the first release. **To be built right after CSV import and the browser tests, within Stage 4.**
