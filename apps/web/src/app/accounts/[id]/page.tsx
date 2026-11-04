@@ -134,6 +134,11 @@ export default function AccountPage() {
               {t('reconcile')}
             </Link>
           )}
+          {!account.archived && (
+            <Link href={`/import?account=${account.id}`} className="btn">
+              {t('import')}
+            </Link>
+          )}
           <button className="btn" type="button" disabled={busy} onClick={() => void archive(!account.archived)}>
             {account.archived ? t('unarchive') : t('archive')}
           </button>

@@ -5,7 +5,7 @@
  * Every /api/v1 request: authenticate → resolve the user's workspace on the server →
  * validate → run the use case in one database transaction with row-level security.
  */
-import { LedgerError } from '@fintrack/domain';
+import { IMPORT_MAX_BYTES, LedgerError } from '@fintrack/domain';
 import {
   getWorkspace,
   idempotent,
@@ -23,6 +23,7 @@ import type pg from 'pg';
 import { ZodError, type z } from 'zod';
 import { FRESH_SESSION_SECONDS, SESSION_ABSOLUTE_SECONDS, SESSION_IDLE_SECONDS, SESSION_KEEP_IDLE_SECONDS, type Auth, type OutgoingEmail } from './auth.ts';
 import * as deletion from './deletion.ts';
+import * as imports from './imports.ts';
 import { buildExport } from './export.ts';
 import { ApiError, json, problem, readJson, readOptionalJson, requestHash, requiredVersion } from './http.ts';
 import * as catalog from './catalog.ts';
@@ -121,12 +122,101 @@ export function createApp(deps: AppDependencies) {
     };
   }
 
+  /** Stored idempotent answers stay small: the rows can always be read back. */
+  const summaryOf = ({ rows: _rows, ...summary }: Awaited<ReturnType<typeof imports.getImport>>) => summary;
+
   /** An action on an existing object, with no body (void, restore, unlock, archive): Idem, 200. */
   const ACTION = { status: 200, optionalBody: true };
   const statusAction = (action: 'void' | 'restore') =>
     idempotentWrite(schemas.emptyBody, (db, context, _input, call) => services.changeStatus(db, context, call.params.id!, action), ACTION);
 
+  /** A file sent with a form. Limits come first: BR-16.8 allows 5 MB, and nothing about the file is kept. */
+  async function readUpload(call: Call) {
+    const tooLarge = () => new ApiError(413, 'IMPORT_TOO_LARGE', 'A file can be at most 5 MB (BR-16.8)');
+    if (Number(call.request.headers.get('content-length') ?? 0) > IMPORT_MAX_BYTES + 64 * 1024) throw tooLarge();
+    const form = await call.request.formData().catch(() => {
+      throw new ApiError(400, 'VALIDATION_FAILED', 'Send the file as multipart/form-data');
+    });
+    const file = form.get('file');
+    if (!(file instanceof File)) throw new ApiError(422, 'VALIDATION_FAILED', 'Choose a file');
+    if (file.size > IMPORT_MAX_BYTES) throw tooLarge();
+    const text = (name: string) => {
+      const value = form.get(name);
+      return typeof value === 'string' && value !== '' ? value : undefined;
+    };
+    const settings = text('settings');
+    let parsed: unknown = {};
+    try {
+      parsed = settings ? JSON.parse(settings) : {};
+    } catch {
+      throw new ApiError(422, 'VALIDATION_FAILED', 'The settings are not valid JSON');
+    }
+    return { bytes: new Uint8Array(await file.arrayBuffer()), fileName: file.name || null, settings: parsed, text };
+  }
+
   const routes: Route[] = [
+    {
+      method: 'POST',
+      pattern: /^\/api\/v1\/imports\/preview$/,
+      handler: async (call) => {
+        const upload = await readUpload(call);
+        return json(200, imports.previewFile(upload.bytes, schemas.previewSettings.parse(upload.settings)));
+      },
+    },
+    {
+      method: 'POST',
+      pattern: /^\/api\/v1\/imports$/,
+      handler: async (call) => {
+        const key = call.request.headers.get('idempotency-key');
+        if (!key || key.length < 8 || key.length > 200) throw new ApiError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Send an Idempotency-Key header of 8 to 200 characters');
+        const upload = await readUpload(call);
+        const settings = schemas.importSettings.parse(upload.settings);
+        const accountId = schemas.id.parse(upload.text('accountId'));
+        const saveProfileAs = upload.text('saveProfileAs')?.trim().slice(0, 100);
+        const hash = await requestHash('POST', call.url.pathname, { file: imports.sha256(upload.bytes), settings, accountId, saveProfileAs });
+        const result = await inWorkspace(
+          call.userId,
+          (db, context) =>
+            idempotent(db, { userId: context.userId, workspaceId: context.workspaceId, key, requestHash: hash }, async () => {
+              const { rows: _rows, ...summary } = await imports.createBatch(db, context, { bytes: upload.bytes, fileName: upload.fileName, accountId, settings, saveProfileAs });
+              return { status: 201, body: summary };
+            }),
+          true,
+        );
+        return json(result.status, result.body, result.replayed ? { 'idempotent-replayed': 'true' } : {});
+      },
+    },
+    { method: 'GET', pattern: /^\/api\/v1\/imports$/, handler: async (call) => json(200, { items: await inWorkspace(call.userId, imports.listImports) }) },
+    { method: 'GET', pattern: /^\/api\/v1\/import-profiles$/, handler: async (call) => json(200, { items: await inWorkspace(call.userId, imports.getProfiles) }) },
+    {
+      method: 'GET',
+      pattern: new RegExp(`^/api/v1/imports/${UUID}$`),
+      handler: async (call) => json(200, await inWorkspace(call.userId, (db, context) => imports.getImport(db, context, call.params.id!))),
+    },
+    {
+      method: 'PATCH',
+      pattern: new RegExp(`^/api/v1/imports/${UUID}/rows$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.importDecisionsBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => imports.decideRows(db, context, call.params.id!, version, input), true));
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/imports/${UUID}/confirm$`),
+      handler: idempotentWrite(schemas.importConfirmBody, async (db, context, input, call) => summaryOf(await imports.confirmImport(db, context, call.params.id!, input)), ACTION),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/imports/${UUID}/undo$`),
+      handler: idempotentWrite(schemas.importUndoBody, async (db, context, input, call) => summaryOf(await imports.undoImport(db, context, call.params.id!, input)), ACTION),
+    },
+    {
+      method: 'DELETE',
+      pattern: new RegExp(`^/api/v1/imports/${UUID}$`),
+      handler: async (call) => json(200, await inWorkspace(call.userId, (db, context) => imports.discardImport(db, context, call.params.id!), true)),
+    },
     {
       method: 'POST',
       pattern: /^\/api\/v1\/workspaces$/,

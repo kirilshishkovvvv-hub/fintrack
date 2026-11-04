@@ -235,6 +235,8 @@ async function purgeInTransaction(db: Db, days: number): Promise<number> {
     }
   }
   await db.query('DELETE FROM fin.idempotency_records WHERE expires_at < now()');
+  // Abandoned reviews and discarded imports (§11.3). Their rows go with them.
+  await db.query("DELETE FROM fin.import_batches WHERE status IN ('review', 'discarded') AND created_at < now() - interval '7 days'");
   await db.query("DELETE FROM auth.login_throttle WHERE first_failure_at < now() - interval '1 day'");
   return purged;
 }

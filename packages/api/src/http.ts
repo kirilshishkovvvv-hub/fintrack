@@ -24,6 +24,10 @@ export type ProblemCode =
   | 'ARCHIVE_BLOCKED'
   | 'REAUTH_REQUIRED'
   | 'DELETION_PENDING'
+  | 'IMPORT_TOO_LARGE'
+  | 'DECISIONS_REQUIRED'
+  | 'CURRENCY_CONFIRM_REQUIRED'
+  | 'IMPORT_EDITED'
   | 'INTERNAL';
 
 export class ApiError extends Error {

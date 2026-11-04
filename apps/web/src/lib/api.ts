@@ -51,6 +51,9 @@ const TRANSLATED_CODES = new Set([
   'LOCKED_RECONCILED',
   'RECONCILIATION_DIFFERENCE',
   'ARCHIVE_BLOCKED',
+  'IMPORT_TOO_LARGE',
+  'DECISIONS_REQUIRED',
+  'CURRENCY_CONFIRM_REQUIRED',
 ]);
 
 /** The user-facing message for a failed change, from the problem's stable code (Stage 2 §9.1). */
@@ -58,6 +61,14 @@ export function errorMessage(problem: unknown, tErrors: (key: string) => string)
   if (!(problem instanceof ApiProblem)) return tErrors('LEDGER_RULE');
   if (JSON.stringify(problem.details ?? '').includes('future')) return tErrors('futureDate');
   return tErrors(TRANSLATED_CODES.has(problem.code) ? problem.code : 'LEDGER_RULE');
+}
+
+/** Sends a file with a form, reporting problems the same way as api(). */
+export async function postForm<T>(path: string, form: FormData, idempotencyKey?: string): Promise<T> {
+  const response = await fetch(path, { method: 'POST', body: form, credentials: 'same-origin', headers: idempotencyKey ? { 'idempotency-key': idempotencyKey } : {} });
+  const data = (await response.json().catch(() => null)) as (T & { code?: string; title?: string; details?: unknown }) | null;
+  if (!response.ok) throw new ApiProblem(response.status, data?.code ?? 'INTERNAL', data?.title ?? 'Request failed', data?.details);
+  return data as T;
 }
 
 export function newIdempotencyKey(): string {

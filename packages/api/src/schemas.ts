@@ -3,7 +3,7 @@
  * intentions; there is no field for a balance, a posting or a currency (Stage 2 §9.3).
  */
 import { z } from 'zod';
-import { isIsoDate, MAX_ABS_CENTS } from '@fintrack/domain';
+import { IMPORT_DATE_FORMATS, IMPORT_ENCODINGS, isIsoDate, MAX_ABS_CENTS } from '@fintrack/domain';
 
 export const isoDate = z.string().refine(isIsoDate, 'must be a calendar date in YYYY-MM-DD form');
 export const id = z.uuid();
@@ -121,6 +121,58 @@ export const mergeCategoryBody = z.strictObject({ intoId: id });
 
 /** The password is used once to encrypt the file and is never stored or logged. */
 export const exportBody = z.strictObject({ password: z.string().min(12).max(128).optional() });
+
+const column = z.number().int().min(0).max(500);
+const importMapping = z.strictObject({
+  date: column,
+  amount: column.optional(),
+  debit: column.optional(),
+  credit: column.optional(),
+  description: column.optional(),
+  counterparty: column.optional(),
+  reference: column.optional(),
+  currency: column.optional(),
+});
+const importFormat = {
+  encoding: z.enum(IMPORT_ENCODINGS),
+  delimiter: z.enum([';', ',', '\t', '|']),
+  decimalSeparator: z.enum(['.', ',']),
+  dateFormat: z.enum(IMPORT_DATE_FORMATS),
+  headerRow: z.number().int().min(0).max(500).nullable(),
+};
+
+/** How to read a file (FR-16 steps 2 and 3). */
+export const importSettings = z.strictObject({
+  ...importFormat,
+  mapping: importMapping.refine((m) => m.amount !== undefined || m.debit !== undefined || m.credit !== undefined, 'map an amount, or debit and credit columns'),
+});
+
+/** The choices the user has changed so far; the rest comes from detection. */
+export const previewSettings = z.strictObject({
+  encoding: importFormat.encoding.optional(),
+  delimiter: importFormat.delimiter.optional(),
+  decimalSeparator: importFormat.decimalSeparator.optional(),
+  dateFormat: importFormat.dateFormat.optional(),
+  headerRow: importFormat.headerRow.optional(),
+  mapping: importMapping.partial().optional(),
+});
+
+export const importDecisionsBody = z.strictObject({
+  decisions: z
+    .array(
+      z.strictObject({
+        rowId: id,
+        decision: z.enum(['import', 'skip', 'link', 'transfer']).optional(),
+        categoryId: id.nullable().optional(),
+        counterAccountId: id.nullable().optional(),
+      }),
+    )
+    .min(1)
+    .max(10_000),
+});
+
+export const importConfirmBody = z.strictObject({ confirmCurrency: z.boolean().optional() });
+export const importUndoBody = z.strictObject({ confirmEdited: z.boolean().optional() });
 
 export const auditQuery = z.strictObject({ before: id.optional() });
 

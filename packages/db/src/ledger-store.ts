@@ -151,6 +151,54 @@ export async function insertTransaction(
   return { versionId };
 }
 
+/**
+ * Saves many validated transactions, in one statement per table, so that a large import stays
+ * within NFR-03. The same rows as insertTransaction; the database still checks each one at commit.
+ */
+export async function insertTransactionsBulk(
+  db: Db,
+  workspaceId: string,
+  items: readonly { tx: Transaction; description: string | null }[],
+  meta: { origin: TransactionOrigin; userId: string },
+): Promise<void> {
+  if (items.length === 0) return;
+  const currency = await workspaceCurrency(db, workspaceId);
+  await db.query(
+    `INSERT INTO fin.transactions (id, workspace_id, txn_date, kind, status, origin, refund_of_id, description, created_by, updated_by)
+     SELECT x.id, $1, x.txn_date, x.kind, 'posted', $2, x.refund_of_id, x.description, $3, $3
+       FROM jsonb_to_recordset($4::jsonb) AS x(id uuid, txn_date date, kind text, refund_of_id uuid, description text)`,
+    [workspaceId, meta.origin, meta.userId, JSON.stringify(items.map(({ tx, description }) => ({ id: tx.id, txn_date: tx.date, kind: tx.kind, refund_of_id: tx.refundOfId ?? null, description })))],
+  );
+  await db.query(
+    `INSERT INTO fin.postings (id, workspace_id, transaction_id, txn_date, txn_status, ledger_account_id, amount_minor, currency, line_no, mark)
+     SELECT x.id, $1, x.transaction_id, x.txn_date, 'posted', x.ledger_account_id, x.amount_minor, $2, x.line_no, x.mark
+       FROM jsonb_to_recordset($3::jsonb) AS x(id uuid, transaction_id uuid, txn_date date, ledger_account_id uuid, amount_minor bigint, line_no int, mark text)`,
+    [
+      workspaceId,
+      currency,
+      JSON.stringify(
+        items.flatMap(({ tx }) =>
+          tx.postings.map((posting, index) => ({
+            id: uuidv7(),
+            transaction_id: tx.id,
+            txn_date: tx.date,
+            ledger_account_id: posting.ledgerAccountId,
+            amount_minor: posting.amount,
+            line_no: index + 1,
+            mark: posting.mark ?? null,
+          })),
+        ),
+      ),
+    ],
+  );
+  await db.query(
+    `INSERT INTO fin.transaction_versions (id, workspace_id, transaction_id, version, change_type, after, changed_by)
+     SELECT x.id, $1, x.transaction_id, 1, 'create', x.after, $2
+       FROM jsonb_to_recordset($3::jsonb) AS x(id uuid, transaction_id uuid, after jsonb)`,
+    [workspaceId, meta.userId, JSON.stringify(items.map(({ tx, description }) => ({ id: uuidv7(), transaction_id: tx.id, after: snapshotOf(tx, { description, memo: null }) })))],
+  );
+}
+
 /** Writes a transaction's postings in line order. Balancing is checked at commit (LR-01). */
 export async function insertPostings(db: Db, workspaceId: string, tx: Transaction): Promise<void> {
   const currency = await workspaceCurrency(db, workspaceId);

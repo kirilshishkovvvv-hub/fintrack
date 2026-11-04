@@ -21,10 +21,33 @@ The running record of implementation work: what was built, what was verified, an
 | Activity log (audit view), including sign-ins and failed sign-ins | ✅ Done, tested, checked in the browser |
 | "Keep me signed in" (14 idle days), per-account login slowdown | ✅ Done and tested |
 | Account deletion: request, 7-day cancel window, purge | ✅ Done and tested; request and cancel checked in the browser |
-| CSV import (moved here from Stage 7, AP-15) | ⏳ After the above |
+| CSV import (moved here from Stage 7, AP-15) | ✅ Done, tested, checked in the browser; matching to planned bills joins with Stage 5 |
 | End-to-end browser tests (Playwright) | ⏳ Next |
+| Passkeys (your addition) | ⏳ After the browser tests |
 
-**Test run (4 Nov 2026, evening):** 198 passed, 11 todo, 0 failed. Both type checks clean.
+**Test run (4 Nov 2026, late evening):** 229 passed, 10 todo, 0 failed. Both type checks clean.
+
+### Added on 4 Nov 2026 (late evening): CSV import
+
+- **The flow:** upload → the format is detected → the user checks the columns and a preview → rows are classified → review and decide → confirm, all or nothing → undo if needed. The file is never stored; only parsed rows are (BR-16.7).
+- **Tested, with the Stage 1 numbers:**
+  - GT-35 and AC-16.1, AC-16.2: identical rows get ordinals, re-imports add nothing, Current 937.50, Safe to Spend 1,037.50;
+  - GT-36: possible duplicates need a decision; linking gives one transaction, keeping both gives two and is audited;
+  - GT-09: both sides of a transfer make exactly one transaction, and Income and Expenses stay 0;
+  - GT-38 (ledger part) and AC-16.4: undo restores every figure; it's blocked while reconciled, listing the locked transactions, and edited transactions are listed for confirmation;
+  - GT-39 (b): an 800-row confirmation interrupted at row 301 saves nothing; a retry saves 800; another changes nothing;
+  - GT-71: rows in USD or BGN are rejected, and a file with no currency column needs the user's confirmation;
+  - AC-16.5: Windows-1251 with comma decimals reads correctly;
+  - 2,000 rows are classified and confirmed in under 10 seconds (NFR-03), on this development machine;
+  - the 5 MB and 10,000-row limits, and ISO-5 (another user gets 404).
+- **The database itself** refuses a second import of the same fingerprint and ordinal, and a second claim on a transaction.
+- **Checked in the browser:** a Bulgarian Windows-1251 file with a title line and a total line. A bad date and a row dated tomorrow were rejected, the transfer was accepted, confirm moved Current from €2,233.17 to €2,308.17, and undo returned it exactly.
+- **Waiting for later:**
+  - matching rows to planned bills (GT-37, part of GT-38): Stage 5, listed as "todo" in the test run;
+  - Should items not built: the running-balance check, Excel files, value date, editing a saved format (saving again under the same name replaces it);
+  - payee rules (BR-05.6): for now a category is suggested from earlier transactions with the same text;
+  - the Uncategorized total on the dashboard (AC-05.3) joins with the reports.
+- **Not tested on real bank files.** All test files are ones I wrote. Stage 2 calls for anonymized files from banks in the launch countries, and these would show what the format detection misses. Every detected setting can be changed on screen.
 
 ### Added on 4 Nov 2026 (evening): encrypted export (your request)
 
@@ -156,6 +179,11 @@ At 360 px wide there's no horizontal scrolling on the dashboard or the add-trans
 | T-41 | **Resolves T-18: `memberships.user_id` stays without a foreign key to the auth user.** The purge removes them in order, and a test checks nothing is left | Keeps the auth and financial schemas independent. | Easy |
 | T-42 | **"Your data and privacy" page** groups export, activity log and deletion; it's reached from Accounts | Makes the rights in Annex L easy to find. | Easy |
 | T-43 | **AES-256 ZIP (AE-2) written with Node's built-in crypto**, no new dependency. Encrypted is the main path and plain the labelled alternative | Your request. A user-chosen password means we can't read the file and can't recover it; exporting again is the recovery. Extends the Stage 2 §11.5 format without changing its contents. | Easy |
+| T-44 | **Two-step upload:** the preview is stateless and the browser sends the file again to create the batch, in place of the single multipart call in Stage 2 §9.2 | The server holds no file between steps (BR-16.7). | Easy |
+| T-45 | **Lines with an unusual column count are left out and counted on screen**; the date format DD/MM wins when a file fits both, and the preview shows the dates | EU-first (MKT-1), and nothing vanishes or is guessed unseen. | Easy |
+| T-46 | **A transfer can be suggested two ways:** another account named as a whole word (4+ letters) in the description, or an opposite income or expense on another account within 3 days. Accepting the second turns that entry into the one transfer, and undo restores it | BR-16.5: never income plus expense. | Moderate |
+| T-47 | **Suggested transfers and possible duplicates need a decision; nothing is applied silently.** The second side of an existing transfer is linked by default, but it's shown and can be changed | M-5, GT-09. | Easy |
+| T-48 | **"Uncategorized" and "Uncategorized income" are created the first time they're needed** | FR-05 line on imports; workspaces that never import don't see them. | Easy |
 | T-31 | **Lifecycle rules as written in §9.3:** only a posted transaction can be edited, voided or deleted; voided and deleted ones can only be restored. Restoring re-checks the ledger rules (for example an archived account, LR-14), and a deleted transaction older than 30 days can't be restored | Follows the approved lifecycle table exactly. | — |
 
 ---
@@ -253,6 +281,10 @@ GT-09 and GT-10, plus the import parts of GT-39 and GT-71 and the export and sea
 | T-16 | **The API is a framework-independent Fetch handler** that Next.js mounts in Stage 4; for now, services load a workspace's transactions per request | Fully testable without a web server. Database-side totals will be added before the NFR-03 performance test. | Easy |
 | T-17 | **Breached-password check** through Better Auth's Pwned Passwords plugin (k-anonymity, AD-19), switched off only in automated tests | No network calls during tests. | Easy |
 | T-18 | `memberships.user_id` has no foreign key to the auth user yet | It gets one with the account-deletion flow in Stage 4, so deletion order can be designed first. | Easy |
+
+### Added to the plan by you
+
+- **Passkeys (your decision, 4 Nov 2026):** sign-in with Face ID, Windows Hello or a fingerprint, on phones and computers. The device checks the face or finger; we store no biometric data. Password stays as the backup. This moves passkeys from "later" (Stage 1 §12) into the first release. **To be built right after CSV import and the browser tests, within Stage 4.**
 
 ### Open items for you
 

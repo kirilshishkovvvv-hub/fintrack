@@ -56,9 +56,14 @@ export default function TransactionsPage() {
           items.map((tx) => <TransactionRow key={tx.id} tx={tx} accounts={accounts} categories={categories} currency={data.currency} />)
         )}
       </section>
-      <Link href="/trash" className="small">
-        {t('trashLink')}
-      </Link>
+      <div className="actions" style={{ alignItems: 'center' }}>
+        <Link href="/import" className="btn">
+          {t('importLink')}
+        </Link>
+        <Link href="/trash" className="small">
+          {t('trashLink')}
+        </Link>
+      </div>
     </AppShell>
   );
 }
