@@ -115,7 +115,22 @@ describe('golden scenarios (PostgreSQL round trip)', () => {
         if (!id) throw new Error(`No id for ${name}`);
         return id;
       };
-      for (const check of scenario.checks) verifyCheck(ledger, check, idOf);
+      // Plans and goal money aren't stored here: the API tests cover their storage. The ids are the database's.
+      const planningAt = (at: string) => {
+        const state = book.planningAt(at);
+        const mapped = (id: string | null) => (id ? idOf(id) : null);
+        return {
+          ...state,
+          planned: state.planned.map((item) => ({
+            ...item,
+            fromAccountId: mapped(item.fromAccountId),
+            toAccountId: mapped(item.toAccountId),
+            lines: (item.lines ?? []).map((line) => ({ ...line, categoryId: idOf(line.categoryId) })),
+          })),
+          allocations: state.allocations.map((allocation) => ({ ...allocation, accountId: idOf(allocation.accountId) })),
+        };
+      };
+      for (const check of scenario.checks) verifyCheck(ledger, check, idOf, planningAt);
     });
   }
 });

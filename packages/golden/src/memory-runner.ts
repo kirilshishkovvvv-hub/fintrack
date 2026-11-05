@@ -10,14 +10,35 @@ import {
   Ledger,
   parseAmount,
   reconcile,
+  assertCanAllocate,
+  matchingWindowDays,
+  scheduledDates,
+  shiftForNonWorkingDay,
   validateTransaction,
   type AccountClass,
   type AccountType,
   type CategoryLine,
+  type Allocation,
   type LedgerAccount,
+  type PlannedItem,
+  type Schedule,
   type Transaction,
 } from '@fintrack/domain';
-import type { Line, Op, Scenario, TransactionOp } from './scenario.ts';
+import type { Line, Op, PlanTemplate, Scenario, TransactionOp } from './scenario.ts';
+
+/** Everything Safe to Spend needs besides the ledger, as it stood on one date. */
+export interface PlanningState {
+  planned: PlannedItem[];
+  allocations: Allocation[];
+  protectedReserve: number;
+  countSavingsTransfers: boolean;
+  /** Goal progress by name: backed money is worked out from `allocations`; this is dedicated accounts. */
+  dedicated: Map<string, string[]>;
+  goals: string[];
+}
+
+/** Allocations made without a date in a scenario happen before anything else. */
+const FIRST_DAY = '2026-03-01';
 
 /** What happened to the book, in order, so other harnesses can replay it through their own layer. */
 export type BookEvent =
@@ -45,7 +66,11 @@ const CLASS_BY_TYPE: Record<AccountType, AccountClass> = {
 /** Categories the scenarios use (§6.1 plus the brief's defaults). */
 const CATEGORIES: Record<string, { kind: 'income' | 'expense'; parent?: string }> = {
   Salary: { kind: 'income' },
+  Cashback: { kind: 'income' },
   Food: { kind: 'expense' },
+  Travel: { kind: 'expense' },
+  Transport: { kind: 'expense' },
+  Entertainment: { kind: 'expense' },
   Household: { kind: 'expense' },
   'Personal care': { kind: 'expense' },
   Shopping: { kind: 'expense' },
@@ -79,6 +104,14 @@ export class MemoryBook {
   readonly events: BookEvent[] = [];
   private readonly refs = new Map<string, string>();
   private sequence = 0;
+  private readonly rules = new Map<string, PlanTemplate & { schedule?: Schedule; date?: string; payday: boolean; estimated: boolean }>();
+  /** Completed or skipped occurrences: `rule|original` to the date it happened. */
+  private readonly closed = new Map<string, string>();
+  private readonly allocationEvents: { on: string; goal: string; account: string; delta: number }[] = [];
+  private readonly goalNames: string[] = [];
+  private readonly dedicated = new Map<string, string[]>();
+  private protectedReserve = 0;
+  private countSavingsTransfers = true;
 
   constructor() {
     for (const code of ['OBE', 'ADJ', 'VAL', 'CNV'] as const) {
@@ -168,11 +201,157 @@ export class MemoryBook {
         this.events.push({ type: 'merge', fromId: op.from, intoId: op.into });
         return;
       }
+      case 'rule': {
+        const start = op.start ?? FIRST_DAY;
+        const schedule: Schedule = { frequency: op.frequency ?? 'monthly_day', startDate: start, nonWorkingDay: op.nonWorkingDay ?? 'on_date' };
+        if (op.day !== undefined) schedule.anchorDay = op.day;
+        this.rules.set(op.name, { ...op, schedule, payday: op.payday === true, estimated: op.estimated === true });
+        return;
+      }
+      case 'plan':
+        this.rules.set(op.name, { ...op, payday: false, estimated: false });
+        return;
+      case 'confirm': {
+        this.close(op.rule, op.original, op.on);
+        this.post(this.fromTemplate(this.ruleNamed(op.rule), op.on, op.amount));
+        return;
+      }
+      case 'link':
+        this.indexOf(op.ref);
+        this.close(op.rule, op.original, op.on);
+        return;
+      case 'skip':
+        this.close(op.rule, op.original, op.on);
+        return;
+      case 'goal':
+        this.goalNames.push(op.name);
+        return;
+      case 'allocate': {
+        const on = op.on ?? FIRST_DAY;
+        const amount = parseAmount(op.amount);
+        const refused = () => {
+          if ([...this.dedicated.values()].some((accounts) => accounts.includes(op.account))) throw new Error(`${op.account} is dedicated to a goal (G-D3)`);
+          assertCanAllocate(this.ledger.balance(op.account, on), this.allocatedOn(op.account, on), amount);
+        };
+        if (op.rejected) {
+          let threw = false;
+          try {
+            refused();
+          } catch {
+            threw = true;
+          }
+          if (!threw) throw new Error(`Allocating ${op.amount} on ${op.account} should have been refused`);
+          return;
+        }
+        refused();
+        this.allocationEvents.push({ on, goal: op.goal, account: op.account, delta: amount });
+        return;
+      }
+      case 'release':
+        this.allocationEvents.push({ on: op.on ?? FIRST_DAY, goal: op.goal, account: op.account, delta: -parseAmount(op.amount) });
+        return;
+      case 'moveAllocation': {
+        const on = op.on ?? FIRST_DAY;
+        const amount = parseAmount(op.amount);
+        assertCanAllocate(this.ledger.balance(op.to, on), this.allocatedOn(op.to, on), amount);
+        this.allocationEvents.push({ on, goal: op.goal, account: op.from, delta: -amount }, { on, goal: op.goal, account: op.to, delta: amount });
+        return;
+      }
+      case 'dedicate':
+        this.dedicated.set(op.goal, [...(this.dedicated.get(op.goal) ?? []), op.account]);
+        this.chart.get(op.account).account!.spendable = false;
+        return;
+      case 'setReserve':
+        this.protectedReserve = parseAmount(op.amount);
+        return;
+      case 'setSavingsTransfers':
+        this.countSavingsTransfers = op.count;
+        return;
       default: {
         const tx = this.buildTransaction(op);
         this.post(tx);
         if (op.ref) this.refs.set(op.ref, tx.id);
       }
+    }
+  }
+
+  /** The plans and goal money as they stood on a date: later completions and allocations haven't happened yet. */
+  planningAt(at: string): PlanningState {
+    const planned: PlannedItem[] = [];
+    const until = new Date(Date.parse(`${at}T00:00:00Z`) + 400 * 86_400_000).toISOString().slice(0, 10);
+    for (const [name, rule] of this.rules) {
+      const dates = rule.schedule ? scheduledDates(rule.schedule, until) : [{ originalDate: rule.date!, dueDate: shiftForNonWorkingDay(rule.date!) }];
+      for (const date of dates) {
+        const closedOn = this.closed.get(`${name}|${date.originalDate}`);
+        if (closedOn !== undefined && closedOn <= at) continue;
+        planned.push(this.toItem(name, rule, date));
+      }
+    }
+    const totals = new Map<string, Allocation>();
+    for (const event of this.allocationEvents) {
+      if (event.on > at) continue;
+      const key = `${event.goal}|${event.account}`;
+      const current = totals.get(key) ?? { goalId: event.goal, accountId: event.account, amount: 0, goalOrder: this.goalNames.indexOf(event.goal) };
+      totals.set(key, { ...current, amount: current.amount + event.delta });
+    }
+    return {
+      planned,
+      allocations: [...totals.values()].filter((allocation) => allocation.amount > 0),
+      protectedReserve: this.protectedReserve,
+      countSavingsTransfers: this.countSavingsTransfers,
+      dedicated: this.dedicated,
+      goals: this.goalNames,
+    };
+  }
+
+  private toItem(name: string, rule: PlanTemplate & { schedule?: Schedule; payday: boolean; estimated: boolean }, date: { originalDate: string; dueDate: string }): PlannedItem {
+    const lines = [...(rule.lines ?? []), ...(rule.extras ?? [])].map(([categoryId, amount]) => ({ categoryId, amount: parseAmount(amount) }));
+    const base = rule.kind === 'transfer' ? parseAmount(rule.amount!) : rule.kind === 'debtPayment' ? parseAmount(rule.principal!) : 0;
+    return {
+      id: `${name}|${date.originalDate}`,
+      name,
+      kind: rule.kind === 'debtPayment' ? 'debt_payment' : rule.kind,
+      originalDate: date.originalDate,
+      dueDate: date.dueDate,
+      amount: base + lines.reduce((total, line) => total + line.amount, 0),
+      fromAccountId: rule.from ?? null,
+      toAccountId: rule.to ?? null,
+      lines,
+      isPayday: rule.payday,
+      goalId: rule.goal ?? null,
+      amountType: rule.estimated ? 'estimated' : 'fixed',
+      windowDays: matchingWindowDays(rule.schedule ?? null),
+    };
+  }
+
+  private ruleNamed(name: string) {
+    const rule = this.rules.get(name);
+    if (!rule) throw new Error(`No rule named ${name}`);
+    return rule;
+  }
+
+  /** BR-08.4: an occurrence is completed, linked or skipped once. */
+  private close(rule: string, original: string, on: string): void {
+    const key = `${rule}|${original}`;
+    if (this.closed.has(key)) throw new Error(`${key} is already closed`);
+    this.closed.set(key, on);
+  }
+
+  private allocatedOn(account: string, on: string): number {
+    return this.allocationEvents.filter((event) => event.account === account && event.on <= on).reduce((total, event) => total + event.delta, 0);
+  }
+
+  private fromTemplate(rule: PlanTemplate, on: string, amount?: string): Transaction {
+    const lines = (rule.lines ?? []).map(([name, value]): Line => [name, amount ?? value]);
+    switch (rule.kind) {
+      case 'expense':
+        return this.buildTransaction({ op: 'expense', date: on, account: rule.from!, lines });
+      case 'income':
+        return this.buildTransaction({ op: 'income', date: on, account: rule.to!, lines });
+      case 'transfer':
+        return this.buildTransaction({ op: 'transfer', date: on, from: rule.from!, to: rule.to!, amount: amount ?? rule.amount! });
+      case 'debtPayment':
+        return this.buildTransaction({ op: 'debtPayment', date: on, from: rule.from!, to: rule.to!, principal: rule.principal!, extras: rule.extras ?? [] });
     }
   }
 

@@ -3,7 +3,7 @@
  * The same data is run by several harnesses: the pure domain runner now, and the
  * database and API runners when those layers exist. Amounts are decimal strings.
  */
-import type { AccountType } from '@fintrack/domain';
+import type { AccountType, Frequency, NonWorkingDay } from '@fintrack/domain';
 
 export type Amount = string;
 export type Line = readonly [name: string, amount: Amount];
@@ -44,7 +44,38 @@ export type Op =
   /** Archives an account or category (E-58, E-59). */
   | { op: 'archive'; name: string }
   /** Merges one category into another of the same kind (E-59). */
-  | { op: 'merge'; from: string; into: string };
+  | { op: 'merge'; from: string; into: string }
+  /** A monthly (or other) recurring rule. It's active from the scenario's start. */
+  | (PlanTemplate & { op: 'rule'; day?: number; frequency?: Frequency; start?: string; payday?: true; estimated?: true; nonWorkingDay?: NonWorkingDay })
+  /** A one-off planned item. */
+  | (PlanTemplate & { op: 'plan'; date: string })
+  /** Completes an occurrence by creating the actual transaction from its template (BR-08.5). */
+  | { op: 'confirm'; rule: string; original: string; on: string; amount?: Amount }
+  /** Completes an occurrence by linking an existing transaction (BR-08.5). */
+  | { op: 'link'; rule: string; original: string; ref: string; on: string }
+  | { op: 'skip'; rule: string; original: string; on: string }
+  | { op: 'goal'; name: string; target?: Amount }
+  /** `rejected` asserts the operation is refused, and that nothing changes. */
+  | { op: 'allocate'; goal: string; account: string; amount: Amount; on?: string; rejected?: true }
+  | { op: 'release'; goal: string; account: string; amount: Amount; on?: string }
+  | { op: 'moveAllocation'; goal: string; from: string; to: string; amount: Amount; on?: string }
+  | { op: 'dedicate'; goal: string; account: string }
+  | { op: 'setReserve'; amount: Amount }
+  | { op: 'setSavingsTransfers'; count: boolean };
+
+/** What a rule or one-off plan will do when it's completed. */
+export interface PlanTemplate {
+  name: string;
+  kind: 'expense' | 'income' | 'transfer' | 'debtPayment';
+  from?: string;
+  to?: string;
+  lines?: Line[];
+  amount?: Amount;
+  principal?: Amount;
+  extras?: Line[];
+  /** R5: the goal whose money covers it. */
+  goal?: string;
+}
 
 export interface FlowCheck {
   from: string;
@@ -65,6 +96,14 @@ export interface BudgetCheck {
   spent: Amount;
   /** Utilization as displayed (AM-3), e.g. "23.0 %". */
   display: string;
+  /** The thresholds reached, from 80 and 100 (BR-07.7). */
+  crossed?: number[];
+}
+
+export interface ScheduledCheck {
+  category: string;
+  month: string;
+  amount: Amount;
 }
 
 export interface Check {
@@ -75,6 +114,19 @@ export interface Check {
   liabilities?: Amount;
   netWorth?: Amount;
   safeToSpend?: Amount;
+  /** The terms of Safe to Spend (§7.4), and the last day of its window. */
+  uco?: Amount;
+  uga?: Amount;
+  windowTo?: string;
+  perDay?: Amount;
+  /** Names of the items on each information line (§7.10). */
+  dueOnPayday?: string[];
+  latePayday?: string[];
+  expectedIncome?: string[];
+  /** Backed amount per goal (§8.1), and progress of dedicated goals. */
+  backed?: Record<string, Amount>;
+  progress?: Record<string, Amount>;
+  scheduled?: ScheduledCheck[];
   flows?: FlowCheck[];
   budgets?: BudgetCheck[];
 }
