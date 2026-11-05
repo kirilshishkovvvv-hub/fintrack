@@ -2,13 +2,13 @@
 
 **The current state only.** The dated history, with what each test proved, is in [docs/progress-log.md](docs/progress-log.md). Update this file whenever the state changes, and before context runs out.
 
-_Last verified against the code: 4 Nov 2026, see "Test results"._
+_Last verified against the code: 4 Nov 2026, see "Test results". Documents updated 5 Nov 2026._
 
 ## Handoff
 
-- **Current stage:** Stage 4 (core application) plus the import work moved forward (AP-15). **The buildable list is finished. Stage 4's exit isn't complete:** see "What still stands between Stage 4 and done".
+- **Current stage:** Stage 4 (core application) plus the import work moved forward (AP-15). **The buildable list is finished. Stage 4's exit needs only a staging deploy,** which needs a Render account: see "What still stands between Stage 4 and done".
 - **Current task:** none in progress. The Stage 4 report went to the user.
-- **Next action:** get D-2 (export round trip), then run the Safe to Spend user test plan with the user (Stage 2 §17.2), then Stage 5.
+- **Next action:** start Stage 5, ledger and API first. The Safe to Spend user test (Stage 2 §17.2) must run before the Stage 5 UI is finalized, not before Stage 5 starts.
 - **Don't:** new queries stay plain SQL until decision D-1.
 
 ## Correction to an earlier report
@@ -21,7 +21,7 @@ On 4 Nov I told the user "Stage 4 is built" and described 2FA as optional for th
 |---|---|
 | 1 Requirements, 2 Architecture | ✅ Approved 2 Nov 2026 |
 | 3 Ledger core, login, isolation | ✅ Built, except staging (needs a Render account) |
-| 4 Core application | 🟡 Built and tested; exit blocked on D-2 and staging; legal text needs a lawyer |
+| 4 Core application | 🟡 Built and tested; exit needs staging only; legal text needs a lawyer |
 | 7 Import (moved forward, AP-15) | 🟡 Built, except matching to planned bills (needs Stage 5) and real bank files |
 | 5 Planning, full Safe to Spend | ⏳ Not started |
 | 6 Reports | ⏳ Not started |
@@ -72,7 +72,7 @@ Checked against Stage 1 §12.2 and §13, and Stage 2 §9.2, on 4 Nov 2026.
 
 | Item | State | Needs |
 |---|---|---|
-| "Export round-trip passes" (§12.2 exit) | Not built; AC-17.4 calls it a Should | **D-2** |
+| Export round trip (AC-17.4) | Not built. A Should, no longer an exit criterion (D-2, 5 Nov) | Later |
 | Staging deploy (Stage 3 exit) | Not done | **Render account** |
 | Legal texts, business details (Annex L) | Draft shells only | **Lawyer; the user's details** |
 | "Schedule instead" offer on a future date (AC-04.4) | Date is refused, with a hint; nothing to schedule until Stage 5 | Stage 5 |
@@ -96,9 +96,8 @@ Checked against Stage 1 §12.2 and §13, and Stage 2 §9.2, on 4 Nov 2026.
 ## Pending decisions and dependencies
 
 **From the user, needed now**
-1. **D-2, export round trip:** treat it as a Should (recommended), or build it before Stage 4 closes?
-2. **D-1, Drizzle:** approve the raw parameterized SQL in use (recommended), or add Drizzle as AD-09 approved?
-3. **D-10, D-11, D-12:** three small conflicts or gaps in the approved documents. See DECISIONS.md.
+1. **D-1, Drizzle:** approve the raw parameterized SQL in use (recommended), or add Drizzle as AD-09 approved?
+2. **D-10, D-11, D-12:** three small conflicts or gaps in the approved documents. See DECISIONS.md.
 
 **From the user, before launch**
 3. Render account (staging). Final name and domain (passkeys bind to the domain).
@@ -110,5 +109,5 @@ Checked against Stage 1 §12.2 and §13, and Stage 2 §9.2, on 4 Nov 2026.
 ## Next steps, in priority order
 
 1. Get the decisions above.
-2. Run the Safe to Spend user test plan with the user (Stage 2 §17.2).
-3. Stage 5: budgets, recurring rules, matching, goals, cards and debts, calendar, full Safe to Spend.
+2. Stage 5: budgets, recurring rules, matching, goals, cards and debts, calendar, full Safe to Spend.
+3. Before the Stage 5 UI is finalized: a clickable prototype with invented data, then the Safe to Spend user test with 5 people (Stage 2 §17.2). The user recruits them.

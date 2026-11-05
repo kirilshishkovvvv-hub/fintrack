@@ -9,7 +9,6 @@ The important decisions, with why and their status. Full reasoning: Stage 1 §2 
 | ID | Question | Recommendation | Who |
 |---|---|---|---|
 | D-1 | **AD-09 approved Drizzle; the code uses raw parameterized SQL.** T-3 said Drizzle would come with the API. It never did, and I didn't flag that | Approve the raw SQL: it's working and tested, and it's close to what the row-level security and triggers need. Adding Drizzle now means rewriting every store with no gain in correctness. **Not changed without your OK** | User |
-| D-2 | Stage 1 §12.2 makes "export round-trip passes" a Stage 4 exit criterion, while AC-17.4 calls re-importing a Should | Treat it as a Should, and record that | User |
 | D-4 | Should the plain, unencrypted export stay available? | Yes, labelled, because spreadsheets need it | User |
 | D-5 | Final product name and domain | Before launch: passkeys bind to the domain, and ads need a trademark check | User |
 | D-6 | OK to record TR-01 to TR-20 (Annex L) in the Stage 1 spec | Yes | User |
@@ -39,6 +38,7 @@ The important decisions, with why and their status. Full reasoning: Stage 1 §2 
 | Visuals | 2 Nov | Comparable to leading apps, original, usable in ads | User decision | ✅ |
 | PK-1 | 4 Nov | Passkeys in the first release. **Supersedes** "later" in §3.6; password stays as backup | User decision: easier sign-in | ✅ |
 | D-3 | 4 Nov | Finish the missing Stage 4 items before Stage 5 | User decision | ✅ |
+| D-2 | 5 Nov | Re-importing an export is a Should (AC-17.4), not a Stage 4 exit criterion. **Amends** Stage 1 §12.2 | User decision: the two conflicted | ✅ |
 | Encrypted export | 4 Nov | AES-256 export with the customer's own password as the main path | User's concern about unprotected bank data | ✅ (detail: D-4) |
 
 ## Architecture

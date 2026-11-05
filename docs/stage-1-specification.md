@@ -2981,7 +2981,7 @@ The stage names are unchanged. The import work (Stage 7 content) runs right afte
 |---|---|---|---|
 | 1 | **2 · Technical Architecture** | Decisions OD-01 to OD-03; logical data model from §9; threat model; isolation design; test strategy (golden tests as the executable spec); environments. In parallel, **wireframes for the 6 key screens plus 3–5 user tests of STS comprehension** (OD-15) | Your approval of the architecture and wireframes |
 | 2 | **3 · Database Implementation**, done as a *ledger-core slice* | Auth, workspaces, accounts, postings, categories, transactions, splits, refunds. The schema grows through migrations, never all upfront. **Staging environment live** | GT-01 to GT-27, GT-39, GT-59, GT-70, GT-71 pass; the workspace currency choice (EUR or USD) works; isolation tests pass; staging deploy works |
-| 3 | **4 · Core Application** | Account and transaction UI, reconciliation, history, undo and audit, export, responsive layout | GT-40 to GT-45 pass; export round-trip passes; usable at 360 px |
+| 3 | **4 · Core Application** | Account and transaction UI, reconciliation, history, undo and audit, export, responsive layout | GT-40 to GT-45 pass; usable at 360 px (export round trip: a Should, D-2) |
 | 4 | **7 · Importing and Automation** (moved forward) | CSV import, mapping profiles, fingerprints, claiming, undo import | GT-09, GT-35 to GT-38 pass; 2,000 rows in < 10 s |
 | 5 | **5 · Budgeting and Financial Planning** | Budgets, recurring rules, matching, goals, cards and debts, calendar, STS | GT-16 to GT-20, GT-28 to GT-34, GT-48 to GT-57, GT-61 to GT-69 pass |
 | 6 | **6 · Analytics and Reporting** | Dashboard, core reports, projection | GT-60 passes; dashboard p95 < 1.5 s |
@@ -3036,7 +3036,7 @@ Financial logic is written test-first from the first line of domain code in ever
 
 **Gaps found:**
 - FR-01 has no golden test. That's correct, since it isn't financial logic. Its acceptance tests are defined in Stage 2.
-- FR-17's round-trip and FR-22's formatting need automated tests named in Stage 2.
+- FR-17's round trip (a Should, D-2) and FR-22's formatting need automated tests named in Stage 2.
 
 ---
 
@@ -3096,6 +3096,8 @@ Financial logic is written test-first from the first line of domain code in ever
 - **MKT-1 (user decision, 2 Nov 2026):** the product targets the EU first, not only Bulgaria. It launches in English, Bulgarian, German, Spanish, Italian, Russian, French and Greek, and automatic bank/card connection is planned for release 1.1. This amends C-7, C-9, A-1, BR-05.2, FR-16 (encodings), FR-22 and §10.3; closes OD-16; widens OD-09, OD-18, LQ-03 and LQ-08; and adds LQ-10. The accounting rules are unchanged.
 - **MKT-2 (user decision, 2 Nov 2026):** Russian is dropped, leaving 7 languages. Each language is switched on separately when its translations and legal texts are ready, instead of all at once. Amends FR-22, C-7 and LQ-10. **At launch only English is switched on**; the other six languages follow later, in the order of the ad markets.
 - **PK-1 (user decision, 4 Nov 2026):** passkeys (sign-in with Face ID, Windows Hello, a fingerprint or a device PIN) move from "later" into the first release. No biometric data reaches the product. Passwords stay as the backup. The accounting rules are unchanged.
+
+- **D-2 (user decision, 5 Nov 2026):** re-importing a full export stays a Should (AC-17.4), so it is no longer a Stage 4 exit criterion in §12.2.
 
 **Corrections made while consolidating (they follow directly from the approved option (c); confirmed by the user on 2 Nov 2026):**
 - **GT-33:** STS on 26 Mar becomes **420** (was 400), and after the late salary **2,420** (was 2,400), because the phone bill on 25 Apr falls on payday.
