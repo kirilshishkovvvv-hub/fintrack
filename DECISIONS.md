@@ -38,7 +38,7 @@ The important decisions, with why and their status. Full reasoning: Stage 1 §2 
 | Visuals | 2 Nov | Comparable to leading apps, original, usable in ads | User decision | ✅ |
 | PK-1 | 4 Nov | Passkeys in the first release. **Supersedes** "later" in §3.6; password stays as backup | User decision: easier sign-in | ✅ |
 | D-3 | 4 Nov | Finish the missing Stage 4 items before Stage 5 | User decision | ✅ |
-| D-2 | 5 Nov | Re-importing an export is a Should (AC-17.4), not a Stage 4 exit criterion. **Amends** Stage 1 §12.2 | User decision: the two conflicted | ✅ |
+| D-2 | 5 Nov | Re-importing an export is a Should (AC-17.4), not a Stage 4 exit criterion. **Amends** Stage 1 §12.2, where it is EX-1, because Stage 1 has its own D-2 | User decision: the two conflicted | ✅ |
 | Encrypted export | 4 Nov | AES-256 export with the customer's own password as the main path | User's concern about unprotected bank data | ✅ (detail: D-4) |
 
 ## Architecture

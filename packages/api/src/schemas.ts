@@ -42,6 +42,10 @@ export const updateAccountBody = z.strictObject({
   institution: z.string().trim().max(100).nullable().optional(),
   creditLimit_minor: z.number().int().min(0).max(MAX_ABS_CENTS).nullable().optional(),
   notes: z.string().trim().max(1000).nullable().optional(),
+  loanPrincipal_minor: z.number().int().min(0).max(MAX_ABS_CENTS).nullable().optional(),
+  loanRate_bp: z.number().int().min(0).max(100000).nullable().optional(),
+  loanInstallment_minor: z.number().int().min(0).max(MAX_ABS_CENTS).nullable().optional(),
+  loanTerm_months: z.number().int().min(1).max(1200).nullable().optional(),
 });
 
 export const openingBody = z
@@ -81,6 +85,8 @@ const meta = {
   useGoalMoney: z.strictObject({ goalId: id, amount_minor: positiveMinor.optional() }).optional(),
   /** BR-08.5: this entry is that planned item. */
   linkOccurrenceId: id.optional(),
+  /** BR-07.13: bought on an instalment plan. The full price still counts now (D-15). */
+  instalment: z.boolean().optional(),
 };
 const plainLine = z.strictObject({ categoryId: id, amount_minor: positiveMinor, memo: text(500).optional() });
 const expenseLine = plainLine.extend({ mark: z.literal('discount').optional() });
@@ -122,6 +128,8 @@ export const createTransferBody = z.strictObject({
   toAccountId: id,
   amount_minor: positiveMinor,
   fee: z.strictObject({ categoryId: id, amount_minor: positiveMinor }).optional(),
+  /** G-T2: the goal money that would be left short moves with the transfer, as one step. */
+  moveAllocations: z.boolean().optional(),
   ...meta,
 });
 

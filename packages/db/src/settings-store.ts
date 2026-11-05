@@ -5,6 +5,10 @@ export interface AccountDetails {
   institution: string | null;
   creditLimit: number | null;
   notes: string | null;
+  loanPrincipal: number | null;
+  loanRateBp: number | null;
+  loanInstallment: number | null;
+  loanTermMonths: number | null;
   dedicatedGoalId: string | null;
   sortOrder: number;
   version: number;
@@ -16,11 +20,15 @@ export async function accountDetails(db: Db, workspaceId: string): Promise<Map<s
     institution_label: string | null;
     credit_limit_minor: string | null;
     notes: string | null;
+    loan_principal_minor: string | null;
+    loan_rate_bp: number | null;
+    loan_installment_minor: string | null;
+    loan_term_months: number | null;
     dedicated_goal_id: string | null;
     sort_order: number;
     version: number;
   }>(
-    `SELECT a.ledger_account_id AS id, a.institution_label, a.credit_limit_minor::text, a.notes, a.dedicated_goal_id, a.sort_order, la.version
+    `SELECT a.ledger_account_id AS id, a.institution_label, a.credit_limit_minor::text, a.notes, a.loan_principal_minor::text, a.loan_rate_bp, a.loan_installment_minor::text, a.loan_term_months, a.dedicated_goal_id, a.sort_order, la.version
        FROM fin.accounts a JOIN fin.ledger_accounts la ON la.id = a.ledger_account_id
       WHERE a.workspace_id = $1 AND la.workspace_id = $1`,
     [workspaceId],
@@ -32,6 +40,10 @@ export async function accountDetails(db: Db, workspaceId: string): Promise<Map<s
         institution: row.institution_label,
         creditLimit: row.credit_limit_minor === null ? null : Number(row.credit_limit_minor),
         notes: row.notes,
+        loanPrincipal: row.loan_principal_minor === null ? null : Number(row.loan_principal_minor),
+        loanRateBp: row.loan_rate_bp,
+        loanInstallment: row.loan_installment_minor === null ? null : Number(row.loan_installment_minor),
+        loanTermMonths: row.loan_term_months,
         dedicatedGoalId: row.dedicated_goal_id,
         sortOrder: row.sort_order,
         version: row.version,
@@ -55,13 +67,14 @@ export async function updateAccountFields(
   db: Db,
   workspaceId: string,
   id: string,
-  fields: { type: string; spendable: boolean; cardReserve: boolean; institution: string | null; creditLimit: number | null; notes: string | null },
+  fields: { type: string; spendable: boolean; cardReserve: boolean; institution: string | null; creditLimit: number | null; notes: string | null; loanPrincipal: number | null; loanRateBp: number | null; loanInstallment: number | null; loanTermMonths: number | null },
 ): Promise<void> {
   await db.query(
     `UPDATE fin.accounts
-        SET account_type = $3, spendable = $4, card_reserve = $5, institution_label = $6, credit_limit_minor = $7, notes = $8
+        SET account_type = $3, spendable = $4, card_reserve = $5, institution_label = $6, credit_limit_minor = $7, notes = $8,
+            loan_principal_minor = $9, loan_rate_bp = $10, loan_installment_minor = $11, loan_term_months = $12
       WHERE workspace_id = $1 AND ledger_account_id = $2`,
-    [workspaceId, id, fields.type, fields.spendable, fields.cardReserve, fields.institution, fields.creditLimit, fields.notes],
+    [workspaceId, id, fields.type, fields.spendable, fields.cardReserve, fields.institution, fields.creditLimit, fields.notes, fields.loanPrincipal, fields.loanRateBp, fields.loanInstallment, fields.loanTermMonths],
   );
 }
 

@@ -85,6 +85,21 @@ export function SafeToSpendCard({ sts, currency }: { sts: SafeToSpend; currency:
           {error}
         </p>
       )}
+      {sts.dueOnPayday.map((item) => (
+        <p className="notice notice-warning small" key={item.occurrenceId}>
+          {t('dueOnPayday', { name: item.name, amount: money(item.amount_minor), date: day(item.dueDate) })}
+        </p>
+      ))}
+      <div>
+        {term(t('available'), signed(sts.eligibleFunds_minor), [])}
+        {term(t('commitments'), `−${money(sts.uco_minor)}`, [])}
+        {term(t('protectedReserve'), `−${money(sts.protectedReserve_minor)}`, [])}
+        {term(t('goalMoney'), `−${money(sts.uga_minor)}`, [])}
+        <div className="row">
+          <strong>{t('safeToSpend')}</strong>
+          <strong className="amount">{signed(sts.value_minor)}</strong>
+        </div>
+      </div>
       <details>
         <summary>{t('howCalculated')}</summary>
         {term(
@@ -101,7 +116,6 @@ export function SafeToSpendCard({ sts, currency }: { sts: SafeToSpend; currency:
             note: item.type === 'overdue' ? t('overdue') : item.dueDate ? day(item.dueDate) : undefined,
           })),
         )}
-        {term(t('protectedReserve'), `−${money(sts.protectedReserve_minor)}`, [])}
         {term(
           t('goalMoney'),
           `−${money(sts.uga_minor)}`,
@@ -115,11 +129,6 @@ export function SafeToSpendCard({ sts, currency }: { sts: SafeToSpend; currency:
             {t('expectedIncome', { name: item.name, amount: money(item.amount_minor), date: day(item.dueDate) })}
           </p>
         ))}
-        {sts.dueOnPayday.map((item) => (
-          <p className="small muted" key={item.occurrenceId}>
-            {t('dueOnPayday', { name: item.name, amount: money(item.amount_minor), date: day(item.dueDate) })}
-          </p>
-        ))}
         {sts.availableCredit_minor > 0 && <p className="small muted">{t('availableCredit', { amount: money(sts.availableCredit_minor) })}</p>}
         {sts.possibleDoubleCounts.map((item) => (
           <p className="notice notice-warning small" key={item.occurrenceId}>
@@ -129,11 +138,11 @@ export function SafeToSpendCard({ sts, currency }: { sts: SafeToSpend; currency:
             </button>
           </p>
         ))}
-        {daysSinceImport !== null && <p className="small muted">{t('lastImport', { days: daysSinceImport })}</p>}
         <p className="small" style={{ marginTop: '0.5rem' }}>
           <Link href="/plan">{t('seePlan')}</Link>
         </p>
       </details>
+      {daysSinceImport !== null && <p className="small muted">{t('lastImport', { days: daysSinceImport })}</p>}
     </section>
   );
 }

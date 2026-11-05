@@ -68,6 +68,14 @@ describe('editing an account (BR-03.1, BR-03.6, BR-03.7)', () => {
     expect((await patch(id, { spendable: true })).status).toBe(422);
   });
 
+  test('BR-10.5: a loan keeps its optional details, for information; other types do not', async () => {
+    const { account, patch } = await setUp();
+    const loan = await account('Loan', 'loan', 800000);
+    const body = { loanPrincipal_minor: 1000000, loanRate_bp: 525, loanInstallment_minor: 30000, loanTerm_months: 60 };
+    expect((await patch(loan, body)).body).toMatchObject({ ...body, balance_minor: 800000 });
+    expect((await patch(loan, { type: 'other_liability' })).body).toMatchObject({ loanPrincipal_minor: null, loanRate_bp: null });
+  });
+
   test('a stale version is refused, and accounts are listed in the chosen order', async () => {
     const { client, account, detail } = await setUp();
     const a = await account('A');

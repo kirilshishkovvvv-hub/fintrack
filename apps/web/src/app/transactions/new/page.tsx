@@ -130,7 +130,7 @@ function NewTransaction() {
     <AppShell>
       <h1>{t('title')}</h1>
       {refundOf && data.source && <p className="small muted">{t('refundFor', { original: data.source.description ?? data.source.date })}</p>}
-      <TransactionForm accounts={data.accounts} categories={data.categories} currency={data.currency} payees={data.payees} goalMoney={data.goalMoney} initial={initial} submitLabel={t('submit')} onSubmit={save} />
+      <TransactionForm accounts={data.accounts} categories={data.categories} currency={data.currency} payees={data.payees} goalMoney={data.goalMoney} isNew initial={initial} submitLabel={t('submit')} onSubmit={save} />
     </AppShell>
   );
 }

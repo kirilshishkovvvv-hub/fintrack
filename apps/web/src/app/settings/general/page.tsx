@@ -13,11 +13,12 @@ interface WorkspaceSettings {
   currency: string;
   timezone: string;
   protectedReserve_minor: number;
+  stsCountSavingsTransfers: boolean;
   version: number;
   currencyLocked: boolean;
 }
 
-/** Workspace settings (Stage 2 §9.2). The savings-transfer toggle (S-5) comes with Stage 5, where it has an effect. */
+/** Workspace settings (Stage 2 §9.2). */
 export default function GeneralSettingsPage() {
   const t = useTranslations('general');
   const tApp = useTranslations('app');
@@ -45,6 +46,7 @@ export default function GeneralSettingsPage() {
           name: String(form.get('name') ?? '').trim(),
           timezone: String(form.get('timezone')),
           protectedReserve_minor: reserve,
+          stsCountSavingsTransfers: form.get('savingsTransfers') === 'on',
           ...(data.currencyLocked ? {} : { currency: String(form.get('currency')) }),
         },
       });
@@ -86,6 +88,10 @@ export default function GeneralSettingsPage() {
               {t('reserveHint')}
             </span>
           </div>
+          <label className="check">
+            <input type="checkbox" name="savingsTransfers" defaultChecked={data.stsCountSavingsTransfers} /> <span>{t('savingsTransfers')}</span>
+          </label>
+          <p className="small muted">{t('savingsTransfersHint')}</p>
           <div className="field">
             <label htmlFor="timezone">{t('timezone')}</label>
             <select id="timezone" name="timezone" defaultValue={data.timezone} aria-describedby="timezone-hint">

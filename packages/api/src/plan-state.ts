@@ -147,17 +147,19 @@ export async function safeToSpendFigures(db: Db, context: RequestContext, ledger
  * the account that paid. Runs in the caller's database transaction, so the expense and the
  * release succeed or fail together (AC-09.8). Returns what was released.
  */
-export async function releaseGoalMoney(db: Db, context: RequestContext, input: { goalId: string; amount: number; paidFromAccountId: string | null; transactionId: string }): Promise<number> {
+export async function releaseGoalMoney(db: Db, context: RequestContext, input: { goalId: string; amount: number; paidFromAccountId: string | null; transactionId: string }): Promise<{ released: number; from: { accountId: string; amount: number }[] }> {
   const goals = await listGoals(db, context.workspaceId);
   if (!goals.some((goal) => goal.id === input.goalId)) throw new ApiError(422, 'INVALID_REFERENCE', 'The goal does not exist');
   const allocations = (await loadAllocations(db, context.workspaceId)).filter((allocation) => allocation.goalId === input.goalId);
   const ordered = [...allocations].sort((a, b) => Number(b.accountId === input.paidFromAccountId) - Number(a.accountId === input.paidFromAccountId));
   let left = input.amount;
+  const from: { accountId: string; amount: number }[] = [];
   for (const allocation of ordered) {
     if (left === 0) break;
     const used = Math.min(left, allocation.amount);
     await changeAllocation(db, context.workspaceId, { goalId: input.goalId, accountId: allocation.accountId, delta: -used, event: 'use_goal_money', userId: context.userId, transactionId: input.transactionId });
+    from.push({ accountId: allocation.accountId, amount: used });
     left -= used;
   }
-  return input.amount - left;
+  return { released: input.amount - left, from };
 }

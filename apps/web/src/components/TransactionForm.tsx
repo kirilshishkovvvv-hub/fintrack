@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { allocateByWeights } from '@fintrack/domain';
@@ -14,6 +15,9 @@ interface Line {
   amount: string;
   memo: string;
 }
+
+/** BR-10.10: €5,000, or the same figure in dollars. */
+const ASSET_OPTION_MINOR = 500000;
 
 export interface FormValues {
   kind: FormKind;
@@ -125,6 +129,7 @@ export function TransactionForm({
   currency,
   payees = [],
   goalMoney = [],
+  isNew = false,
   initial,
   lockKind,
   submitLabel,
@@ -137,6 +142,7 @@ export function TransactionForm({
   payees?: PayeeOption[];
   /** Goal money by account, for the "paid from your goal money?" question (G-P4). Only on new entries. */
   goalMoney?: { goalId: string; name: string; accountId: string; amount_minor: number }[];
+  isNew?: boolean;
   initial?: Partial<FormValues> | undefined;
   lockKind?: boolean;
   submitLabel: string;
@@ -171,6 +177,8 @@ export function TransactionForm({
   const [confirmExceeds, setConfirmExceeds] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [moveGoalMoney, setMoveGoalMoney] = useState(true);
+  const [instalment, setInstalment] = useState(false);
 
   const set = (patch: Partial<FormValues>) => setValues((current) => ({ ...current, ...patch }));
   const setLine = (index: number, patch: Partial<Line>) => set({ lines: values.lines.map((line, i) => (i === index ? { ...line, ...patch } : line)) });
@@ -198,6 +206,14 @@ export function TransactionForm({
   }
 
   const holding = goalMoney.filter((goal) => goal.accountId === values.accountId);
+  // G-T2: only to word the offer. The server works out and checks the actual move.
+  const moving = kind === 'transfer' ? parseUserAmount(values.total) ?? 0 : 0;
+  const sourceBalance = usable.find((account) => account.id === values.accountId)?.balance_minor ?? 0;
+  const goalShort = Math.max(0, holding.reduce((sum, goal) => sum + goal.amount_minor, 0) - Math.max(0, sourceBalance - moving));
+  const sourceIsCard = usable.find((account) => account.id === values.accountId)?.type === 'card';
+  const firstCategory = values.lines[0]?.target ? byId.get(values.lines[0].target) : undefined;
+  // BR-10.10: a large or lasting purchase can be tracked as an asset instead.
+  const assetOption = isNew && kind === 'expense' && ((parseUserAmount(values.total) ?? 0) >= ASSET_OPTION_MINOR || /vehicle|property/i.test(firstCategory?.name ?? ''));
 
   const firstTarget = kind === 'income' ? ofKind('income')[0]?.id : ofKind('expense')[0]?.id;
   const shownTarget = (line: Line) => line.target || firstTarget || '';
@@ -244,6 +260,8 @@ export function TransactionForm({
       ...(values.memo.trim() ? { memo: values.memo.trim() } : {}),
       ...(values.payee.trim() ? { payee: values.payee.trim() } : {}),
       ...(kind === 'expense' && holding.some((goal) => goal.goalId === values.goalId) ? { useGoalMoney: { goalId: values.goalId } } : {}),
+      ...(kind === 'expense' && isNew && instalment ? { instalment: true } : {}),
+      ...(kind === 'transfer' && moveGoalMoney && goalShort > 0 ? { moveAllocations: true } : {}),
     };
     const optional = (raw: string) => (raw.trim() === '' ? 0 : parseUserAmount(raw));
 
@@ -512,6 +530,21 @@ export function TransactionForm({
         <label htmlFor="date">{t('date')}</label>
         <input id="date" type="date" value={values.date} max={todayLocal()} required onChange={(event) => set({ date: event.target.value })} />
       </div>
+      {goalShort > 0 && (
+        <label className="check">
+          <input type="checkbox" checked={moveGoalMoney} onChange={(event) => setMoveGoalMoney(event.target.checked)} /> <span>{t('moveGoalMoney', { amount: formatMoney(goalShort, currency) })}</span>
+        </label>
+      )}
+      {isNew && kind === 'expense' && sourceIsCard && (
+        <label className="check">
+          <input type="checkbox" checked={instalment} onChange={(event) => setInstalment(event.target.checked)} /> <span>{t('instalment')}</span>
+        </label>
+      )}
+      {assetOption && (
+        <p className="notice notice-info small">
+          {t('assetOption')} <Link href="/accounts/new">{t('assetLink')}</Link>
+        </p>
+      )}
       {kind === 'expense' && holding.length > 0 && (
         <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend style={{ fontWeight: 500, marginBottom: '0.35rem' }}>{t('goalMoneyQuestion')}</legend>

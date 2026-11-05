@@ -78,6 +78,7 @@ export interface VersionSnapshot {
 }
 
 export interface TransactionDetail extends Transaction {
+  occurrence: { id: string; name: string; dueDate: string } | null;
   refundOriginalStatus: string | null;
   versions: {
     version: number;

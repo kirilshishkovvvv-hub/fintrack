@@ -396,6 +396,49 @@ describe('goals (§8)', () => {
     expect(dedicated).toMatchObject({ funding: 'dedicated', allocated_minor: 0, progress_minor: 200000 });
   });
 
+  test('G-T2: a transfer can take its goal money along, as one step; STS stays put', async () => {
+    const { client, post, current, savings, goal, allocate, sts } = await setUp();
+    const emergency = await goal('Emergency');
+    const vacation = await goal('Vacation');
+    await allocate(emergency.id, savings, 120000);
+    await allocate(vacation.id, savings, 80000);
+    const before = (await sts()).value_minor;
+    const moved = await post('/api/v1/transfers', { date: today, fromAccountId: savings, toAccountId: current, amount_minor: 50000, moveAllocations: true });
+    expect(moved.moved).toBe(50000);
+    const rows = await goals(client);
+    expect(rows.map((g) => [g.backed_minor, g.shortfall_minor])).toEqual([[120000, 0], [80000, 0]]);
+    const emergencyRow = rows.find((g) => g.name === 'Emergency');
+    expect(emergencyRow.allocations.map((a: any) => [a.name, a.amount_minor]).sort()).toEqual([['Current', 30000], ['Savings', 90000]]);
+    expect((await sts()).value_minor).toBe(before);
+  });
+
+  test('G-T2: if the other account cannot hold it, neither the transfer nor the move is saved', async () => {
+    const { client, savings, goal, allocate, expense, current } = await setUp();
+    const g = await goal('G');
+    await allocate(g.id, savings, 200000);
+    // The destination already has a shortfall, so it can't take more goal money (G-V2).
+    const h = await goal('H');
+    await allocate(h.id, current, 100000);
+    await expense(today, 100000);
+    const count = (await client.call('GET', '/api/v1/transactions')).body.count;
+    const refused = await client.call('POST', '/api/v1/transfers', { key: key(), body: { date: today, fromAccountId: savings, toAccountId: current, amount_minor: 50000, moveAllocations: true } });
+    expect(refused.status).toBe(409);
+    expect((await client.call('GET', '/api/v1/transactions')).body.count).toBe(count);
+  });
+
+  test('GT-66 (b): goal money on savings, paid from current: the app offers the move', async () => {
+    const { post, current, savings, goal, allocate, once, occurrenceOf, sts } = await setUp();
+    const g = await goal('Car insurance');
+    await allocate(g.id, savings, 30000);
+    await once('Insurance', today, 30000, { goalId: g.id });
+    expect((await sts()).value_minor).toBe(100000);
+    const paid = await post(`/api/v1/occurrences/${(await occurrenceOf('Insurance')).id}/confirm`, {}, 200);
+    expect(paid.moveMoney).toMatchObject({ fromAccountId: savings, toAccountId: current, amount_minor: 30000 });
+    expect((await sts()).value_minor).toBe(70000);
+    await post('/api/v1/transfers', { date: today, fromAccountId: savings, toAccountId: current, amount_minor: 30000 });
+    expect((await sts()).value_minor).toBe(100000);
+  });
+
   test('§8.8: the projection comes with the goal', async () => {
     const { goal } = await setUp();
     const g = await goal('House', { target_minor: 100000, monthly_minor: 10000, targetDate: inDays(400) });
@@ -475,6 +518,15 @@ describe('budgets (FR-07)', () => {
     expect(items.find((row: any) => row.name === 'Household')).toMatchObject({ utilization: 'over', over: true });
     const shopping = items.find((row: any) => row.name === 'Shopping');
     expect(shopping).toMatchObject({ utilization: '0.0 %', netRefund: true, scheduled_minor: 700, spent_minor: -300 });
+  });
+
+  test('BR-07.13: an overspent budget names the instalment purchase behind it; the full price counts now', async () => {
+    const { client, category, account, post } = await setUp();
+    const card = await account('Card', 'card', 0);
+    await budget(client, category('Electronics'), { limit_minor: 20000 });
+    await post('/api/v1/transactions', { kind: 'expense', date: today, accountId: card, description: 'TV', lines: [{ categoryId: category('Electronics'), amount_minor: 60000 }], instalment: true });
+    const [row] = (await rows(client)).items;
+    expect(row).toMatchObject({ spent_minor: 60000, over: true, instalments: [{ description: 'TV', amount_minor: 60000 }] });
   });
 
   test('BR-07.3: the overall limit warns and blocks nothing; income categories have no budget', async () => {

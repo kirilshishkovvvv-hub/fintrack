@@ -12,6 +12,16 @@ import { active, loadAccounts, loadSummary, notifyDataChanged, todayLocal, useAp
 
 /** Older than this, overdue items are collapsed into a group (FR-11). */
 const OLD_DAYS = 90;
+/** ER-5: older than this, an overdue item asks to be resolved. */
+const STILL_UNPAID_DAYS = 30;
+
+interface MoveMoney {
+  fromAccountId: string;
+  fromName: string;
+  toAccountId: string;
+  toName: string;
+  amount_minor: number;
+}
 
 /** Upcoming: what's overdue, then the next 30 days, each with confirm, match and skip (FR-11, BR-08.5). */
 export default function PlanPage() {
@@ -19,7 +29,8 @@ export default function PlanPage() {
   const tApp = useTranslations('app');
   const tErrors = useTranslations('errors');
   const locale = useLocale();
-  const [acting, setActing] = useState<{ id: string; mode: 'confirm' | 'match' } | null>(null);
+  const [acting, setActing] = useState<{ id: string; mode: 'confirm' | 'match' | 'edit' } | null>(null);
+  const [moveOffer, setMoveOffer] = useState<MoveMoney | null>(null);
   const [candidates, setCandidates] = useState<Transaction[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -31,6 +42,7 @@ export default function PlanPage() {
   if (failed) return <LoadError retry={reload} />;
 
   const money = (minor: number) => formatMoney(minor, data?.currency ?? 'EUR', locale);
+  const stillUnpaidBefore = new Date(Date.parse(`${todayLocal()}T00:00:00Z`) - STILL_UNPAID_DAYS * 86_400_000).toISOString().slice(0, 10);
   const nameOf = (id: string | null) => data?.accounts.find((account) => account.id === id)?.name ?? '';
 
   async function run(work: () => Promise<unknown>, done: string) {
@@ -55,11 +67,25 @@ export default function PlanPage() {
     const amount = parseUserAmount(String(form.get('amount') ?? ''));
     if (amount === null || amount <= 0) return setError(t('badAmount'));
     const changed = amount !== item.amount_minor;
-    void run(
-      () => api('POST', `/api/v1/occurrences/${item.id}/confirm`, { idempotencyKey: newIdempotencyKey(), body: { date: String(form.get('date')), ...(changed ? { amount_minor: amount } : {}) } }),
-      t('confirmed', { name: item.name }),
-    );
+    void run(async () => {
+      const result = await api<{ moveMoney?: MoveMoney }>('POST', `/api/v1/occurrences/${item.id}/confirm`, { idempotencyKey: newIdempotencyKey(), body: { date: String(form.get('date')), ...(changed ? { amount_minor: amount } : {}) } });
+      setMoveOffer(result.moveMoney ?? null);
+    }, t('confirmed', { name: item.name }));
   }
+
+  function saveOne(event: React.FormEvent<HTMLFormElement>, item: Occurrence) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const amount = parseUserAmount(String(form.get('amount') ?? ''));
+    if (amount === null || amount <= 0) return setError(t('badAmount'));
+    void run(() => api('PATCH', `/api/v1/occurrences/${item.id}`, { ifMatch: item.version, body: { amount_minor: amount, dueDate: String(form.get('date')) } }), t('changedOne', { name: item.name }));
+  }
+
+  const moveMoney = (offer: MoveMoney) =>
+    run(async () => {
+      await api('POST', '/api/v1/transfers', { idempotencyKey: newIdempotencyKey(), body: { date: todayLocal(), fromAccountId: offer.fromAccountId, toAccountId: offer.toAccountId, amount_minor: offer.amount_minor } });
+      setMoveOffer(null);
+    }, t('moved'));
 
   async function openMatch(item: Occurrence) {
     setActing({ id: item.id, mode: 'match' });
@@ -84,7 +110,8 @@ export default function PlanPage() {
         <div className="row-main">
           <div className="row-title">
             {item.name}
-            {item.overdue && <span className="badge">{t('overdue')}</span>}
+            {item.overdue && <span className="badge">{item.dueDate < stillUnpaidBefore ? t('stillUnpaid') : t('overdue')}</span>}
+            {item.isEdited && <span className="badge">{t('editedBadge')}</span>}
             {item.isPayday && <span className="badge">{t('payday')}</span>}
             {item.amountType === 'estimated' && <span className="badge">{t('estimate')}</span>}
           </div>
@@ -108,10 +135,36 @@ export default function PlanPage() {
         <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('skipNamed', { name: item.name })} onClick={() => void skip(item)}>
           {t('skip')}
         </button>
+        <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('changeNamed', { name: item.name })} onClick={() => setActing({ id: item.id, mode: 'edit' })}>
+          {t('change')}
+        </button>
         <Link className="btn btn-ghost" href={`/plan/rules/${item.ruleId}`} aria-label={t('editNamed', { name: item.name })}>
           {t('edit')}
         </Link>
       </div>
+      {acting?.id === item.id && acting.mode === 'edit' && (
+        <form onSubmit={(event) => saveOne(event, item)}>
+          <p className="small muted">{t('changeHint')}</p>
+          <div className="grid-2">
+            <div className="field">
+              <label htmlFor={`one-amount-${item.id}`}>{t('oneAmount')}</label>
+              <input id={`one-amount-${item.id}`} name="amount" type="text" inputMode="decimal" defaultValue={editableAmount(item.amount_minor)} required />
+            </div>
+            <div className="field">
+              <label htmlFor={`one-date-${item.id}`}>{t('oneDate')}</label>
+              <input id={`one-date-${item.id}`} name="date" type="date" defaultValue={item.dueDate} required />
+            </div>
+          </div>
+          <div className="actions">
+            <button className="btn btn-primary" type="submit" disabled={busy}>
+              {t('oneSave')}
+            </button>
+            <button className="btn" type="button" onClick={() => setActing(null)}>
+              {tApp('cancel')}
+            </button>
+          </div>
+        </form>
+      )}
       {acting?.id === item.id && acting.mode === 'confirm' && (
         <form onSubmit={(event) => confirm(event, item)}>
           <div className="grid-2">
@@ -202,6 +255,14 @@ export default function PlanPage() {
       {notice && (
         <p className="notice notice-info" role="status">
           {notice}
+        </p>
+      )}
+      {moveOffer && (
+        <p className="notice notice-info">
+          {t('moveOffer', { amount: money(moveOffer.amount_minor), from: moveOffer.fromName, to: moveOffer.toName })}{' '}
+          <button className="btn" type="button" disabled={busy} onClick={() => void moveMoney(moveOffer)}>
+            {t('moveIt')}
+          </button>
         </p>
       )}
       {!data ? (

@@ -96,7 +96,7 @@
     "overdue": "overdue",
     "notIncluded": "Not included in this figure:",
     "expectedIncome": "Expected income: {name}, {amount} on {date}",
-    "dueOnPayday": "Due on payday: {name}, {amount} on {date}",
+    "dueOnPayday": "Due on payday: {name}, {amount} on {date}. Your salary covers this, so it isn't taken off yet.",
     "availableCredit": "Available credit: {amount}",
     "possibleDouble": "Possible double count: {name}, {amount}.",
     "linkThem": "Link them",
@@ -180,7 +180,11 @@
     "matchPrompt": "This looks like your planned {name} (due {date}). Link it?",
     "outsideRange": "The amount is outside the range you expected.",
     "matchLink": "Link it",
-    "matchKeep": "Keep separate"
+    "matchKeep": "Keep separate",
+    "moveGoalMoney": "Also move {amount} of goal money with it, so no goal runs short",
+    "instalment": "Bought on an instalment plan (the full price still counts this month)",
+    "assetOption": "Something that keeps its value? You can track it as an asset: add an Other asset account, and transfer to it instead.",
+    "assetLink": "Add the account"
   },
   "transactions": {
     "title": "Activity",
@@ -267,7 +271,14 @@
       "restore": "Restored",
       "trash": "Deleted",
       "unlock": "Unlocked"
-    }
+    },
+    "paidPlan": "This paid the planned {name} (due {date}).",
+    "unlinkPlan": "Unlink from the plan",
+    "unlinkedPlan": "Unlinked. The transaction stays, and the item is planned again.",
+    "occurrenceTaken": "Another transaction now pays the planned item this one was linked to, so this one stays unlinked.",
+    "releaseGoal": "Paid from goal money?",
+    "releaseGoalSave": "Release from this goal",
+    "releasedGoal": "Goal money released."
   },
   "accounts": {
     "title": "Accounts",
@@ -789,20 +800,29 @@
     "openingSave": "Change opening balance",
     "openingSaved": "Opening balance changed.",
     "archivedNote": "Unarchive this account to change its opening balance.",
-    "back": "Back to the account"
+    "back": "Back to the account",
+    "loanHint": "For your information. Nothing is calculated from these.",
+    "loanPrincipal": "Original amount (optional)",
+    "loanRate": "Interest rate, % (optional)",
+    "loanInstallment": "Instalment (optional)",
+    "loanTerm": "Term in months (optional)",
+    "badRate": "Enter a rate like 5.25.",
+    "badTerm": "Enter a number of months."
   },
   "general": {
     "title": "General",
     "name": "Name of this space",
     "reserve": "Protected reserve",
-    "reserveHint": "Money you never want to count as spendable. Safe to Spend leaves it out.",
+    "reserveHint": "Money you never want to count as spendable. A common choice is one month of fixed costs. If your emergency fund is in a savings account, this can stay at 0.",
     "timezone": "Time zone",
     "timezoneHint": "Decides what \"today\" and the start of a month mean for your figures.",
     "currency": "Currency",
     "currencyLocked": "The currency can't change once you have transactions.",
     "badAmount": "Enter an amount like 250.00.",
     "save": "Save",
-    "saved": "Saved."
+    "saved": "Saved.",
+    "savingsTransfers": "Count planned transfers to savings as commitments",
+    "savingsTransfersHint": "On: money you plan to save comes off Safe to Spend before it moves."
   },
   "profile": {
     "title": "Profile and emails",
@@ -961,7 +981,19 @@
       "income": "Income",
       "transfer": "Transfer",
       "debt_payment": "Debt payment"
-    }
+    },
+    "stillUnpaid": "Still unpaid?",
+    "editedBadge": "Changed",
+    "change": "Change",
+    "changeNamed": "Change this {name} only",
+    "changeHint": "This changes only this one. Later changes to the repeating item leave it as it is.",
+    "oneAmount": "Amount",
+    "oneDate": "Due date",
+    "oneSave": "Save this one",
+    "changedOne": "{name} changed.",
+    "moveOffer": "Goal money for this was on {from}. Move {amount} from {from} to {to}?",
+    "moveIt": "Move it",
+    "moved": "Moved."
   },
   "rules": {
     "title": "Repeating items",
@@ -1030,7 +1062,15 @@
     "endYes": "End it",
     "next": "next {date}",
     "overdueCount": "{count} overdue",
-    "paydayBadge": "Payday"
+    "paydayBadge": "Payday",
+    "lineCategory": "Line {number}: category",
+    "lineAmount": "Line {number}: amount",
+    "removeLine": "Remove line {number}",
+    "remove": "Remove",
+    "addLine": "Split across another category",
+    "pastDates": "{count, plural, one {# earlier date is} other {# earlier dates are}} already in the past, and will count as overdue. Were they paid before you started tracking?",
+    "pastSkip": "Yes, skip them",
+    "pastReview": "Let me review them"
   },
   "budgets": {
     "title": "Budgets",
@@ -1058,7 +1098,15 @@
     "add": "Add budget",
     "badAmount": "Enter an amount like 250.00.",
     "overallExceeded": "Your budgets add up to more than your overall limit of {amount}.",
-    "notMoney": "A budget is a limit, not money. What's left of it isn't part of Safe to Spend."
+    "notMoney": "A budget is a limit, not money. What's left of it isn't part of Safe to Spend.",
+    "thresholds": "Alert me at (%)",
+    "badThresholds": "Enter one to three percentages, like 80, 100.",
+    "includesInstalment": "Includes instalment purchase {name} {amount}",
+    "instalmentPurchase": "without a name",
+    "overall": "Overall monthly limit (optional)",
+    "overallHint": "A warning if your budgets add up to more. It blocks nothing.",
+    "overallSpent": "All spending this month: {amount}",
+    "overallSave": "Save overall limit"
   },
   "goals": {
     "title": "Goals",
@@ -1117,7 +1165,30 @@
     "addBill": "Add one",
     "whichBill": "Which bill?",
     "linkSave": "Link it",
-    "archivedTitle": "{count, plural, one {# archived goal} other {# archived goals}}"
+    "archivedTitle": "{count, plural, one {# archived goal} other {# archived goals}}",
+    "edit": "Edit",
+    "editNamed": "Edit {name}",
+    "editSave": "Save",
+    "convert": "Change how it saves",
+    "convertNamed": "Change how it saves: {name}",
+    "convertSave": "Change it",
+    "convertToDedicated": "The whole account will count towards this goal, and this goal's set-aside money is released. The account must not hold money for another goal.",
+    "convertToVirtual": "Each account stops being dedicated, and its balance is set aside for this goal instead. The figures stay the same.",
+    "addAccount": "Add an account",
+    "addAccountNamed": "Add an account to {name}",
+    "history": "History",
+    "unlinkSpendable": "Remove, count as spendable: {name}",
+    "unlinkSpendableShort": "Remove, count as spendable",
+    "unlinkSaving": "Remove, keep as savings: {name}",
+    "unlinkSavingShort": "Remove, keep as savings",
+    "events": {
+      "create": "Set aside",
+      "increase": "Added",
+      "decrease": "Reduced",
+      "release": "Released",
+      "move": "Moved",
+      "use_goal_money": "Used"
+    }
   },
   "debts": {
     "title": "Debts",

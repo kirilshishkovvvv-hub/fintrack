@@ -411,6 +411,35 @@ export async function relinkOccurrence(db: Db, workspaceId: string, transactionI
   return completeOccurrence(db, workspaceId, row.id, transactionId);
 }
 
+/** The planned item a transaction paid, for its detail screen. */
+export async function occurrenceOfTransaction(db: Db, workspaceId: string, transactionId: string): Promise<{ id: string; name: string; dueDate: string } | null> {
+  const result = await db.query<{ id: string; name: string; due_date: string }>(
+    `SELECT o.id, r.name, ${iso('o.due_date')} AS due_date FROM fin.planned_occurrences o
+       JOIN fin.recurring_rules r ON r.id = o.rule_id
+      WHERE o.workspace_id = $1 AND o.linked_transaction_id = $2`,
+    [workspaceId, transactionId],
+  );
+  const row = result.rows[0];
+  return row ? { id: row.id, name: row.name, dueDate: row.due_date } : null;
+}
+
+/** BR-07.13: marks a purchase as bought on an instalment plan. It changes no figure. */
+export async function setInstalment(db: Db, workspaceId: string, transactionId: string, value: boolean): Promise<void> {
+  await db.query('UPDATE fin.transactions SET is_instalment = $3 WHERE workspace_id = $1 AND id = $2', [workspaceId, transactionId, value]);
+}
+
+/** The instalment purchases of a month, by category line. */
+export async function instalmentLines(db: Db, workspaceId: string, month: string): Promise<{ categoryId: string; description: string | null; amount: number }[]> {
+  const result = await db.query<{ ledger_account_id: string; description: string | null; amount_minor: string }>(
+    `SELECT p.ledger_account_id, t.description, p.amount_minor::text
+       FROM fin.postings p JOIN fin.transactions t ON t.id = p.transaction_id
+      WHERE p.workspace_id = $1 AND t.workspace_id = $1 AND t.is_instalment AND t.status = 'posted' AND p.amount_minor > 0
+        AND t.txn_date >= $2::date AND t.txn_date < $2::date + interval '1 month'`,
+    [workspaceId, month],
+  );
+  return result.rows.map((row) => ({ categoryId: row.ledger_account_id, description: row.description, amount: Number(row.amount_minor) }));
+}
+
 export async function linkedTransactionIds(db: Db, workspaceId: string): Promise<Set<string>> {
   const result = await db.query<{ linked_transaction_id: string }>('SELECT linked_transaction_id FROM fin.planned_occurrences WHERE workspace_id = $1 AND linked_transaction_id IS NOT NULL', [workspaceId]);
   return new Set(result.rows.map((row) => row.linked_transaction_id));

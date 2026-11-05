@@ -214,6 +214,15 @@ describe('account deletion (§8.6, GAP-5, AC-01.6)', () => {
     const bystanderEmail = nextEmail();
     const bystander = (await fullUser(bystanderEmail)).client;
     const before = (await bystander.call('GET', '/api/v1/summary')).body;
+    // Plans and goal money must go too: a rule with its occurrences, a payee, a goal, a budget and an alert.
+    const categories = (await client.call('GET', '/api/v1/categories')).body.items;
+    const household = categories.find((c: any) => c.name === 'Household').id;
+    const salary = categories.find((c: any) => c.name === 'Salary').id;
+    const monthNow = new Date().toISOString().slice(0, 7);
+    expect((await client.call('POST', '/api/v1/rules', { key: key(), body: { name: 'Pay', kind: 'income', accountId: account, lines: [{ ledgerAccountId: salary, amount_minor: 100 }], frequency: 'monthly_day', startDate: `${monthNow}-01`, isPayday: true, payer: 'ACME' } })).status).toBe(201);
+    const goal = (await client.call('POST', '/api/v1/goals', { key: key(), body: { name: 'G', funding: 'virtual' } })).body;
+    expect((await client.call('POST', `/api/v1/goals/${goal.id}/allocations`, { key: key(), body: { operation: 'allocate', accountId: account, amount_minor: 1 } })).status).toBe(200);
+    expect((await client.call('PUT', `/api/v1/budgets/${household}/${monthNow}`, { key: key(), body: { limit_minor: 100 } })).status).toBe(200);
     const userId = (await sql('SELECT id FROM auth."user" WHERE email = $1', [email])).rows[0].id;
     const workspaceId = (await sql('SELECT workspace_id FROM fin.memberships WHERE user_id = $1', [userId])).rows[0].workspace_id;
     await sql(`INSERT INTO auth.passkey (id, "publicKey", "userId", "credentialID", counter, "deviceType", "backedUp") VALUES ('pk-' || $1, 'x', $1, 'cred-' || $1, 0, 'singleDevice', false)`, [userId]);
@@ -228,7 +237,7 @@ describe('account deletion (§8.6, GAP-5, AC-01.6)', () => {
 
     expect((await purgeDeletedWorkspaces(harness.database.pool)).purged).toBe(1);
 
-    for (const table of ['memberships', 'ledger_accounts', 'accounts', 'categories', 'payees', 'transactions', 'postings', 'transaction_versions', 'reconciliations', 'reconciliation_items', 'idempotency_records']) {
+    for (const table of ['recurring_rules', 'recurring_rule_lines', 'planned_occurrences', 'goals', 'goal_allocations', 'allocation_events', 'budget_limits', 'budget_alert_events', 'memberships', 'ledger_accounts', 'accounts', 'categories', 'payees', 'transactions', 'postings', 'transaction_versions', 'reconciliations', 'reconciliation_items', 'idempotency_records']) {
       const left = await sql(`SELECT count(*)::int AS n FROM fin.${table} WHERE workspace_id = $1`, [workspaceId]);
       expect(left.rows[0].n, table).toBe(0);
     }

@@ -5,6 +5,9 @@
 import {
   build,
   Ledger,
+  AllocationExceedsUnallocated,
+  allocationsToMove,
+  assertCanAllocate,
   searchText,
   todayIn,
   validateTransaction,
@@ -18,7 +21,10 @@ import {
   changeTransactionStatus,
   accountDetails,
   categoryMeta,
+  changeAllocation,
   completeOccurrence,
+  occurrenceOfTransaction,
+  setInstalment,
   createWorkspace,
   ensureOccurrences,
   loadAllocations,
@@ -303,7 +309,7 @@ function buildTransfer(id: string, input: TransferInput): Transaction {
 }
 
 type TextInput = { description?: string | undefined; memo?: string | undefined; payee?: string | undefined };
-type PlanLinks = { useGoalMoney?: { goalId: string; amount_minor?: number | undefined } | undefined; linkOccurrenceId?: string | undefined };
+type PlanLinks = { useGoalMoney?: { goalId: string; amount_minor?: number | undefined } | undefined; linkOccurrenceId?: string | undefined; instalment?: boolean | undefined };
 
 /** The descriptive fields, creating the payee if the name is new (BR-05.6). */
 async function textOf(db: Db, context: RequestContext, input: TextInput): Promise<TransactionText & { payeeName: string | null }> {
@@ -374,6 +380,10 @@ async function checkRefundSize(db: Db, context: RequestContext, tx: Transaction,
  * link to a planned item, and, if there's no link, the planned items it might be (BR-08.10).
  */
 async function applyPlanLinks(db: Db, context: RequestContext, tx: Transaction, chart: Chart, input: PlanLinks, text: TransactionText & { payeeName: string | null }) {
+  if (input.instalment) {
+    if (tx.kind !== 'expense') throw new ApiError(422, 'VALIDATION_FAILED', 'Only a purchase can be an instalment purchase');
+    await setInstalment(db, context.workspaceId, tx.id, true);
+  }
   const paid = tx.postings.find((posting) => posting.amount < 0 && chart.find(posting.ledgerAccountId)?.account);
   let released = 0;
   if (input.useGoalMoney) {
@@ -381,7 +391,7 @@ async function applyPlanLinks(db: Db, context: RequestContext, tx: Transaction, 
     const spent = paid ? Math.abs(paid.amount) : 0;
     const wanted = input.useGoalMoney.amount_minor ?? Math.min(spent, available);
     if (wanted > available) throw new ApiError(409, 'ALLOCATION_EXCEEDS_UNALLOCATED', 'That is more than this goal holds', { available_minor: available });
-    if (wanted > 0) released = await releaseGoalMoney(db, context, { goalId: input.useGoalMoney.goalId, amount: wanted, paidFromAccountId: paid?.ledgerAccountId ?? null, transactionId: tx.id });
+    if (wanted > 0) released = (await releaseGoalMoney(db, context, { goalId: input.useGoalMoney.goalId, amount: wanted, paidFromAccountId: paid?.ledgerAccountId ?? null, transactionId: tx.id })).released;
   }
   if (input.linkOccurrenceId) {
     if (!(await completeOccurrence(db, context.workspaceId, input.linkOccurrenceId, tx.id))) throw new ApiError(409, 'ALREADY_LINKED', 'This planned item is already linked or closed');
@@ -399,9 +409,39 @@ export async function recordTransaction(db: Db, context: RequestContext, input: 
   return record(db, context, tx, chart, input, origin);
 }
 
+/**
+ * G-T2: moves what the transfer would leave short, in proportion, in the same database
+ * transaction as the transfer. The money has already moved, so the check sees the new balances.
+ */
+async function moveAllocationsWith(db: Db, context: RequestContext, chart: Chart, input: TransferInput) {
+  const workspace = await getWorkspace(db, context.workspaceId);
+  const today = todayIn(workspace.timezone);
+  const ledger = new Ledger(chart, await loadTransactions(db, context.workspaceId));
+  const allocations = await loadAllocations(db, context.workspaceId);
+  const onSource = allocations.filter((allocation) => allocation.accountId === input.fromAccountId);
+  const moves = [...allocationsToMove(ledger.balance(input.fromAccountId, today), onSource)];
+  if (moves.length === 0) return 0;
+  const destination = chart.find(input.toAccountId);
+  if (destination?.account?.class !== 'cash') throw new ApiError(422, 'VALIDATION_FAILED', 'Goal money can only move to a cash account (G-V1)');
+  const total = moves.reduce((sum, [, amount]) => sum + amount, 0);
+  const already = allocations.filter((allocation) => allocation.accountId === input.toAccountId).reduce((sum, allocation) => sum + allocation.amount, 0);
+  try {
+    assertCanAllocate(ledger.balance(input.toAccountId, today), already, total);
+  } catch (error) {
+    if (error instanceof AllocationExceedsUnallocated) throw new ApiError(409, 'ALLOCATION_EXCEEDS_UNALLOCATED', 'The other account cannot hold this goal money (G-V2)', { available_minor: error.available });
+    throw error;
+  }
+  for (const [goalId, amount] of moves) {
+    await changeAllocation(db, context.workspaceId, { goalId, accountId: input.fromAccountId, delta: -amount, event: 'move', userId: context.userId });
+    await changeAllocation(db, context.workspaceId, { goalId, accountId: input.toAccountId, delta: amount, event: 'move', userId: context.userId });
+  }
+  return total;
+}
+
 export async function recordTransfer(db: Db, context: RequestContext, input: TransferInput, origin: 'manual' | 'occurrence' = 'manual') {
   const chart = await loadChart(db, context.workspaceId);
-  return record(db, context, buildTransfer(uuidv7(), input), chart, input, origin);
+  const created = await record(db, context, buildTransfer(uuidv7(), input), chart, input, origin);
+  return input.moveAllocations ? { ...created, moved: await moveAllocationsWith(db, context, chart, input) } : created;
 }
 
 /**
@@ -479,6 +519,7 @@ export async function getTransaction(db: Db, context: RequestContext, id: string
   return {
     ...transactionDto(record, await lockedTransactionIds(db, context.workspaceId)),
     refundOriginalStatus: original?.tx.status ?? null,
+    occurrence: await occurrenceOfTransaction(db, context.workspaceId, id),
     versions: versions.map((entry) => ({
       version: entry.version,
       changeType: entry.changeType,
@@ -498,13 +539,14 @@ export async function editTransaction(db: Db, context: RequestContext, id: strin
     throw new ApiError(422, 'NOT_EDITABLE', 'Opening balances and adjustments are changed from the account, not edited here');
   }
   const chart = await loadChart(db, context.workspaceId);
-  if (input.useGoalMoney || input.linkOccurrenceId) throw new ApiError(422, 'VALIDATION_FAILED', 'Goal money and plan links are set when an entry is created, or from the plan');
+  if (input.useGoalMoney || input.linkOccurrenceId || ('moveAllocations' in input && input.moveAllocations)) throw new ApiError(422, 'VALIDATION_FAILED', 'Goal money and plan links are set when an entry is created, or from the plan');
   const tx = buildFromIntention(chart, id, input);
   await checkRefundSize(db, context, tx, chart, input);
   await checkAgainstLedger(db, context, tx, chart);
   const text = await textOf(db, context, input);
   const result = await replaceTransaction(db, context.workspaceId, tx, { ...text, expectedVersion, userId: context.userId });
   await learnFrom(db, context, tx, chart, text.payeeId);
+  if (input.instalment !== undefined) await setInstalment(db, context.workspaceId, id, input.instalment && tx.kind === 'expense');
   await audit(db, context, 'transaction.edited', id);
   await evaluateBudgetAlerts(db, context, new Ledger(chart, await loadTransactions(db, context.workspaceId)), tx.date.slice(0, 7));
   return withUndo(transactionDto({ ...existing, ...text, tx, version: result.version }), result.versionId);

@@ -4,12 +4,20 @@ import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { AppShell, LoadError } from '@/components/AppShell';
+import { editableAmount } from '@/components/TransactionForm';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { formatDay, formatMoney, parseUserAmount } from '@/lib/money';
 import { loadGoals, loadOccurrences, type Goal } from '@/lib/plan';
 import { active, loadAccounts, loadSummary, notifyDataChanged, useApiData } from '@/lib/use-api';
 
-type Action = 'allocate' | 'release' | 'move' | 'payment';
+type Action = 'allocate' | 'release' | 'move' | 'payment' | 'edit' | 'convert' | 'account';
+
+interface HistoryLine {
+  accountId: string;
+  event: string;
+  delta: number;
+  occurredAt: string;
+}
 
 /** Goals: backed progress, shortfalls, the amount needed, and "Save for a bill" (§8, R5, wireframe 6). */
 export default function GoalsPage() {
@@ -23,6 +31,7 @@ export default function GoalsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<Record<string, HistoryLine[]>>({});
   const key = useRef(newIdempotencyKey());
   const { data, failed, reload } = useApiData(async () => {
     const [goals, accounts, summary, occurrences] = await Promise.all([loadGoals(), loadAccounts(), loadSummary(), loadOccurrences(`?to=${new Date(Date.now() + 400 * 86_400_000).toISOString().slice(0, 10)}`)]);
@@ -106,6 +115,49 @@ export default function GoalsPage() {
     void run(() => api('POST', `/api/v1/goals/${goal.id}/link-payment`, { idempotencyKey: newIdempotencyKey(), body: { occurrenceId } }), t('changed', { name: goal.name }));
   }
 
+  function saveGoal(event: React.FormEvent<HTMLFormElement>, goal: Goal) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const optional = (name: string) => {
+      const text = String(form.get(name) ?? '').trim();
+      return text ? parseUserAmount(text) : undefined;
+    };
+    const target = optional('target');
+    const monthly = optional('monthly');
+    if (target === null || monthly === null || target === 0) return setError(t('badAmount'));
+    const name = String(form.get('name') ?? '').trim();
+    void run(
+      () =>
+        api('PATCH', `/api/v1/goals/${goal.id}`, {
+          ifMatch: goal.version,
+          body: { name, target_minor: target ?? null, monthly_minor: monthly ?? null, targetDate: String(form.get('targetDate') ?? '') || null },
+        }),
+      t('changed', { name }),
+    );
+  }
+
+  const unlink = (goal: Goal, accountId: string, spendable: boolean) =>
+    run(() => api('POST', `/api/v1/goals/${goal.id}/unlink`, { idempotencyKey: newIdempotencyKey(), body: { accountId, spendable } }), t('changed', { name: goal.name }));
+
+  function addAccount(event: React.FormEvent<HTMLFormElement>, goal: Goal) {
+    event.preventDefault();
+    const accountId = String(new FormData(event.currentTarget).get('account'));
+    void run(() => api('POST', `/api/v1/goals/${goal.id}/accounts`, { idempotencyKey: newIdempotencyKey(), body: { accountId } }), t('changed', { name: goal.name }));
+  }
+
+  function convert(event: React.FormEvent<HTMLFormElement>, goal: Goal) {
+    event.preventDefault();
+    const accountId = String(new FormData(event.currentTarget).get('account') ?? '');
+    const to = goal.funding === 'virtual' ? 'dedicated' : 'virtual';
+    void run(() => api('POST', `/api/v1/goals/${goal.id}/convert`, { idempotencyKey: newIdempotencyKey(), body: { to, ...(accountId ? { accountId } : {}) } }), t('changed', { name: goal.name }));
+  }
+
+  async function loadHistory(goal: Goal) {
+    if (history[goal.id]) return;
+    const found = await api<{ items: HistoryLine[] }>('GET', `/api/v1/goals/${goal.id}/history`);
+    setHistory((current) => ({ ...current, [goal.id]: found.items }));
+  }
+
   const archive = (goal: Goal) => run(() => api('POST', `/api/v1/goals/${goal.id}/archive`, { idempotencyKey: newIdempotencyKey() }), t('archived', { name: goal.name }));
 
   const openAccounts = (goal: Goal) => goal.allocations.map((row) => (
@@ -146,9 +198,21 @@ export default function GoalsPage() {
           </div>
         ))}
         {goal.accounts.map((row) => (
-          <div className="row small" key={row.accountId}>
-            <span>{t('wholeAccount', { name: row.name })}</span>
-            <span className="amount">{money(row.balance_minor)}</span>
+          <div className="import-row small" key={row.accountId}>
+            <div className="row" style={{ borderTop: 0 }}>
+              <span>{t('wholeAccount', { name: row.name })}</span>
+              <span className="amount">{money(row.balance_minor)}</span>
+            </div>
+            {live && (
+              <div className="actions">
+                <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('unlinkSpendable', { name: row.name })} onClick={() => void unlink(goal, row.accountId, true)}>
+                  {t('unlinkSpendableShort')}
+                </button>
+                <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('unlinkSaving', { name: row.name })} onClick={() => void unlink(goal, row.accountId, false)}>
+                  {t('unlinkSavingShort')}
+                </button>
+              </div>
+            )}
           </div>
         ))}
         {goal.payments.length > 0 && <p className="small" style={{ marginTop: '0.5rem' }}>{t('saveForBill')}</p>}
@@ -180,10 +244,83 @@ export default function GoalsPage() {
             <button className="btn" type="button" disabled={busy} aria-label={t('linkNamed', { name: goal.name })} onClick={() => setActing({ goalId: goal.id, action: 'payment' })}>
               {t('linkBill')}
             </button>
+            {!isVirtual && (
+              <button className="btn" type="button" disabled={busy} aria-label={t('addAccountNamed', { name: goal.name })} onClick={() => setActing({ goalId: goal.id, action: 'account' })}>
+                {t('addAccount')}
+              </button>
+            )}
+            <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('editNamed', { name: goal.name })} onClick={() => setActing({ goalId: goal.id, action: 'edit' })}>
+              {t('edit')}
+            </button>
+            <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('convertNamed', { name: goal.name })} onClick={() => setActing({ goalId: goal.id, action: 'convert' })}>
+              {t('convert')}
+            </button>
             <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('archiveNamed', { name: goal.name })} onClick={() => void archive(goal)}>
               {t('archive')}
             </button>
           </div>
+        )}
+        {open === 'edit' && (
+          <form onSubmit={(event) => saveGoal(event, goal)}>
+            <div className="field">
+              <label htmlFor={`edit-name-${goal.id}`}>{t('name')}</label>
+              <input id={`edit-name-${goal.id}`} name="name" type="text" maxLength={100} defaultValue={goal.name} required />
+            </div>
+            <div className="grid-2">
+              <div className="field">
+                <label htmlFor={`edit-target-${goal.id}`}>{t('target')}</label>
+                <input id={`edit-target-${goal.id}`} name="target" type="text" inputMode="decimal" defaultValue={goal.target_minor ? editableAmount(goal.target_minor) : ''} />
+              </div>
+              <div className="field">
+                <label htmlFor={`edit-date-${goal.id}`}>{t('targetDate')}</label>
+                <input id={`edit-date-${goal.id}`} name="targetDate" type="date" defaultValue={goal.targetDate ?? ''} />
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor={`edit-monthly-${goal.id}`}>{t('monthly')}</label>
+              <input id={`edit-monthly-${goal.id}`} name="monthly" type="text" inputMode="decimal" defaultValue={goal.monthly_minor !== null ? editableAmount(goal.monthly_minor) : ''} />
+            </div>
+            <button className="btn btn-primary" type="submit" disabled={busy}>
+              {t('editSave')}
+            </button>
+          </form>
+        )}
+        {open === 'account' && (
+          <form onSubmit={(event) => addAccount(event, goal)}>
+            <div className="field">
+              <label htmlFor={`add-account-${goal.id}`}>{t('wholeAccountLabel')}</label>
+              <select id={`add-account-${goal.id}`} name="account">
+                {cash.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button className="btn btn-primary" type="submit" disabled={busy}>
+              {t('addAccount')}
+            </button>
+          </form>
+        )}
+        {open === 'convert' && (
+          <form onSubmit={(event) => convert(event, goal)}>
+            <p className="small muted">{isVirtual ? t('convertToDedicated') : t('convertToVirtual')}</p>
+            {isVirtual && (
+              <div className="field">
+                <label htmlFor={`convert-account-${goal.id}`}>{t('wholeAccountLabel')}</label>
+                <select id={`convert-account-${goal.id}`} name="account">
+                  {cash.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <button className="btn btn-primary" type="submit" disabled={busy}>
+              {t('convertSave')}
+            </button>
+          </form>
         )}
         {open === 'allocate' && (
           <form onSubmit={(event) => allocation(event, goal, 'allocate')}>
@@ -278,6 +415,22 @@ export default function GoalsPage() {
               </button>
             </form>
           ))}
+        {isVirtual && (
+          <details onToggle={(event) => (event.currentTarget as HTMLDetailsElement).open && void loadHistory(goal)}>
+            <summary>{t('history')}</summary>
+            {(history[goal.id] ?? []).map((line, index) => (
+              <div className="row small" key={index}>
+                <span>
+                  {t(`events.${line.event}`)} · {formatDay(line.occurredAt.slice(0, 10), locale)}
+                </span>
+                <span className="amount">
+                  {line.delta < 0 ? '−' : '+'}
+                  {money(line.delta)}
+                </span>
+              </div>
+            ))}
+          </details>
+        )}
       </section>
     );
   };

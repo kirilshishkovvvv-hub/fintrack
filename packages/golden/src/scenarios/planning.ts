@@ -575,4 +575,49 @@ const fullMonth: Scenario[] = [
   },
 ];
 
-export const planning: Scenario[] = [...plannedVersusActual, ...window, ...cards, ...goals, ...fullMonth];
+const exampleOne: Op[] = [
+  { op: 'account', name: 'Current', type: 'current', opening: '1450.00' },
+  { op: 'account', name: 'Cash wallet', type: 'cash', opening: '50.00' },
+  { op: 'account', name: 'Savings', type: 'savings', opening: '4000.00', spendable: false },
+  { op: 'account', name: 'Card', type: 'card', opening: '120.00' },
+  { op: 'rule', name: 'Salary', kind: 'income', to: 'Current', lines: [['Salary', '2100.00']], day: 25, payday: true, start: '2026-03-18' },
+  { op: 'rule', name: 'Phone', kind: 'expense', from: 'Current', lines: [['Utilities', '25.00']], day: 20, start: '2026-03-18' },
+  { op: 'rule', name: 'Electricity', kind: 'expense', from: 'Current', lines: [['Utilities', '70.00']], day: 22, start: '2026-03-18', estimated: true },
+  { op: 'rule', name: 'Rent', kind: 'expense', from: 'Current', lines: [['Rent', '300.00']], day: 25, start: '2026-03-18' },
+  { op: 'goal', name: 'Holiday' },
+  allocate('Holiday', 'Current', '200.00', '2026-03-02'),
+];
+
+/**
+ * §7.8 Example 1, the figures in the Safe to Spend user-test prototype (Stage 2 §17.2). The late
+ * and T6 cases follow from it. If one of these changes, the prototype has to change with it.
+ */
+const userTest: Scenario[] = [
+  {
+    id: '§7.8 Example 1',
+    title: 'The prototype: mid-cycle, on payday before the salary, and the day after',
+    base: 'none',
+    steps: exampleOne,
+    checks: [
+      { at: '2026-03-18', uco: '215.00', uga: '200.00', safeToSpend: '1085.00', perDay: '155.00', windowTo: '2026-03-24', dueOnPayday: ['Rent'], expectedIncome: [] },
+      { at: '2026-03-25', uco: '515.00', safeToSpend: '785.00', windowTo: '2026-03-25', dueOnPayday: [] },
+      { at: '2026-03-26', uco: '610.00', safeToSpend: '690.00', windowTo: '2026-04-24', latePayday: ['Salary'] },
+    ],
+  },
+  {
+    id: '§7.8 Example 1 (T6, from goal money)',
+    title: 'A bill paid from holiday money, with the release: the figure stays',
+    base: 'none',
+    steps: [...exampleOne, { op: 'expense', date: '2026-03-18', account: 'Current', lines: [['Household', '150.00']] }, { op: 'release', goal: 'Holiday', account: 'Current', amount: '150.00', on: '2026-03-18' }],
+    checks: [{ at: '2026-03-18', uga: '50.00', safeToSpend: '1085.00', backed: { Holiday: '50.00' } }],
+  },
+  {
+    id: '§7.8 Example 1 (T6, not from goal money)',
+    title: 'The same bill, answering No: the figure falls by the bill',
+    base: 'none',
+    steps: [...exampleOne, { op: 'expense', date: '2026-03-18', account: 'Current', lines: [['Household', '150.00']] }],
+    checks: [{ at: '2026-03-18', uga: '200.00', safeToSpend: '935.00', backed: { Holiday: '200.00' } }],
+  },
+];
+
+export const planning: Scenario[] = [...plannedVersusActual, ...window, ...cards, ...goals, ...fullMonth, ...userTest];

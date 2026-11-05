@@ -9,6 +9,8 @@ import { signedMoney } from '@/components/TransactionRow';
 import { TransactionForm, valuesFrom, type PayeeOption } from '@/components/TransactionForm';
 import { useUndo } from '@/components/UndoToast';
 import { api, ApiProblem, errorMessage, newIdempotencyKey } from '@/lib/api';
+import { formatMoney } from '@/lib/money';
+import { loadGoals } from '@/lib/plan';
 import {
   loadAccounts,
   loadCategories,
@@ -31,16 +33,19 @@ export default function TransactionDetailPage() {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [occurrenceTaken, setOccurrenceTaken] = useState(false);
+  const [aroundNotice, setAroundNotice] = useState<string | null>(null);
   const key = useRef(newIdempotencyKey());
   const { data, failed } = useApiData(async () => {
-    const [tx, accounts, categories, summary, payees] = await Promise.all([
+    const [tx, accounts, categories, summary, payees, goals] = await Promise.all([
       api<TransactionDetail>('GET', `/api/v1/transactions/${id}`),
       loadAccounts(),
       loadCategories(),
       loadSummary(),
       api<{ items: PayeeOption[] }>('GET', '/api/v1/payees').then((r) => r.items),
+      loadGoals(),
     ]);
-    return { tx, accounts, categories, currency: summary.currency, payees };
+    return { tx, accounts, categories, currency: summary.currency, payees, goals };
   });
 
   if (failed) {
@@ -71,6 +76,12 @@ export default function TransactionDetailPage() {
   const ownAccountId = tx.lines.find((line) => accounts.has(line.ledgerAccountId))?.ledgerAccountId;
   const title = tx.description ?? categoryNames[0] ?? tKinds(tx.kind);
   const when = (iso: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  const heldGoals =
+    tx.kind === 'expense'
+      ? data.goals
+          .filter((goal) => goal.status === 'active')
+          .flatMap((goal) => goal.allocations.filter((row) => row.accountId === ownAccountId).map((row) => ({ key: `${goal.id}|${row.accountId}`, label: `${goal.name} (${formatMoney(row.amount_minor, currency, locale)})` })))
+      : [];
 
   async function run(action: () => Promise<Transaction>, message: string, after?: () => void) {
     setBusy(true);
@@ -98,8 +109,37 @@ export default function TransactionDetailPage() {
     notifyDataChanged();
   }
 
+  /** Changes around the transaction, not to it, so there's nothing to undo here. */
+  async function changeAround(action: () => Promise<unknown>, message: string) {
+    setBusy(true);
+    setError(null);
+    setAroundNotice(null);
+    try {
+      await action();
+      setAroundNotice(message);
+      notifyDataChanged();
+    } catch (problem) {
+      setError(errorMessage(problem, tErrors));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const unlinkPlan = (occurrenceId: string) => changeAround(() => api('POST', `/api/v1/occurrences/${occurrenceId}/unlink`, { idempotencyKey: newIdempotencyKey() }), t('unlinkedPlan'));
+
+  /** G-P3: spending recorded first can be connected to a goal later. */
+  function releaseGoal(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const [goalId, accountId] = String(new FormData(event.currentTarget).get('target')).split('|');
+    void changeAround(() => api('POST', `/api/v1/goals/${goalId}/allocations`, { idempotencyKey: newIdempotencyKey(), body: { operation: 'use', accountId, transactionId: tx.id } }), t('releasedGoal'));
+  }
+
   const voidTx = () => run(() => api<Transaction>('POST', `/api/v1/transactions/${tx.id}/void`, { idempotencyKey: key.current }), t('voidedToast'));
-  const restore = () => run(() => api<Transaction>('POST', `/api/v1/transactions/${tx.id}/restore`, { idempotencyKey: key.current }), t('restoredToast'));
+  const restore = () => run(async () => {
+    const restored = await api<Transaction & { occurrenceTaken?: boolean }>('POST', `/api/v1/transactions/${tx.id}/restore`, { idempotencyKey: key.current });
+    setOccurrenceTaken(restored.occurrenceTaken === true);
+    return restored;
+  }, t('restoredToast'));
   const trash = () =>
     run(
       () => api<Transaction>('DELETE', `/api/v1/transactions/${tx.id}`, { ifMatch: tx.version }),
@@ -158,6 +198,37 @@ export default function TransactionDetailPage() {
         <p className="notice notice-error" role="alert">
           {error}
         </p>
+      )}
+      {occurrenceTaken && <p className="notice notice-warning">{t('occurrenceTaken')}</p>}
+      {aroundNotice && (
+        <p className="notice notice-info" role="status">
+          {aroundNotice}
+        </p>
+      )}
+      {tx.occurrence && (
+        <section className="card">
+          <p>{t('paidPlan', { name: tx.occurrence.name, date: tx.occurrence.dueDate })}</p>
+          <button className="btn" type="button" disabled={busy} onClick={() => void unlinkPlan(tx.occurrence!.id)}>
+            {t('unlinkPlan')}
+          </button>
+        </section>
+      )}
+      {changeable && heldGoals.length > 0 && (
+        <form className="card" onSubmit={releaseGoal}>
+          <div className="field">
+            <label htmlFor="release-goal">{t('releaseGoal')}</label>
+            <select id="release-goal" name="target">
+              {heldGoals.map((goal) => (
+                <option key={goal.key} value={goal.key}>
+                  {goal.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button className="btn" type="submit" disabled={busy}>
+            {t('releaseGoalSave')}
+          </button>
+        </form>
       )}
 
       {editing && shape ? (

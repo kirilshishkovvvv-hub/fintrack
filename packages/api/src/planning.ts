@@ -271,10 +271,22 @@ async function occurrenceOr404(db: Db, context: RequestContext, id: string) {
   return { occurrence, rule: await ruleOr404(db, context, occurrence.ruleId) };
 }
 
-/** R5: a payment linked to a goal releases the goal money it was covered by. */
+/**
+ * R5: a payment linked to a goal releases the goal money it was covered by. If that money sat
+ * on a non-spendable account and a spendable one paid, the dip is accepted and the user is
+ * offered the move (GT-66 b).
+ */
 async function settleGoal(db: Db, context: RequestContext, occurrence: OccurrenceRow, rule: RuleRow, tx: { id: string; amount: number }) {
-  if (!occurrence.goalId) return 0;
-  return releaseGoalMoney(db, context, { goalId: occurrence.goalId, amount: tx.amount, paidFromAccountId: rule.kind === 'income' ? null : rule.accountId, transactionId: tx.id });
+  if (!occurrence.goalId) return { released_minor: 0 };
+  const paidFromAccountId = rule.kind === 'income' ? null : rule.accountId;
+  const { released, from } = await releaseGoalMoney(db, context, { goalId: occurrence.goalId, amount: tx.amount, paidFromAccountId, transactionId: tx.id });
+  const chart = await loadChart(db, context.workspaceId);
+  const paidFrom = paidFromAccountId ? chart.find(paidFromAccountId)?.account : undefined;
+  const hint = paidFrom?.spendable ? from.find((part) => part.accountId !== paidFromAccountId && !chart.find(part.accountId)?.account?.spendable) : undefined;
+  return {
+    released_minor: released,
+    ...(hint ? { moveMoney: { fromAccountId: hint.accountId, fromName: chart.find(hint.accountId)?.name ?? '', toAccountId: paidFromAccountId, toName: chart.find(paidFromAccountId!)?.name ?? '', amount_minor: hint.amount } } : {}),
+  };
 }
 
 /** BR-08.5: creates the actual from the template; the amount and date can change (E-51). */
@@ -301,17 +313,9 @@ export async function confirmOccurrence(db: Db, context: RequestContext, id: str
         ? await recordTransaction(db, context, { kind: 'debt_payment', date, fromAccountId: accountId, liabilityAccountId: lines[0]!.ledgerAccountId, principal_minor: lines[0]!.amount, extras: asCategories(lines.slice(1)), ...text }, 'occurrence')
         : await recordTransaction(db, context, { kind: rule.kind, date, accountId, lines: asCategories(lines), ...text }, 'occurrence');
   if (!(await completeOccurrence(db, context.workspaceId, id, created.id))) throw new ApiError(409, 'ALREADY_LINKED', 'This item or transaction is already linked');
-  const released = input.useGoalMoney === false ? 0 : await settleGoal(db, context, occurrence, rule, { id: created.id, amount: totalOf(lines) });
+  const goal = input.useGoalMoney === false ? { released_minor: 0 } : await settleGoal(db, context, occurrence, rule, { id: created.id, amount: totalOf(lines) });
   await event(db, context, 'occurrence.confirmed', 'occurrence', id);
-  return { transaction: created, occurrenceId: id, released_minor: released, ...(await afterPayment(db, context, occurrence, rule, totalOf(lines), released)) };
-}
-
-/** GT-66 (b): goal money sat on a non-spendable account, so offer to bring it over. */
-async function afterPayment(db: Db, context: RequestContext, occurrence: OccurrenceRow, rule: RuleRow, amount: number, released: number) {
-  if (!occurrence.goalId || released === 0 || rule.kind === 'income') return {};
-  const chart = await loadChart(db, context.workspaceId);
-  const paidFrom = chart.find(rule.accountId)?.account;
-  return paidFrom?.spendable ? { moveMoneyHint_minor: Math.min(amount, released) } : {};
+  return { transaction: created, occurrenceId: id, ...goal };
 }
 
 /** BR-08.4: one transaction per occurrence, each way (AC-08.4). */
@@ -325,10 +329,10 @@ export async function linkOccurrence(db: Db, context: RequestContext, id: string
   if (!posting) throw new ApiError(422, 'VALIDATION_FAILED', 'This transaction is on another account (M-1)');
   if (!(await completeOccurrence(db, context.workspaceId, id, input.transactionId))) throw new ApiError(409, 'ALREADY_LINKED', 'This transaction is already linked to a planned item');
   const amount = Math.abs(posting.amount);
-  const released = input.useGoalMoney === false ? 0 : await settleGoal(db, context, occurrence, rule, { id: input.transactionId, amount });
+  const goal = input.useGoalMoney === false ? { released_minor: 0 } : await settleGoal(db, context, occurrence, rule, { id: input.transactionId, amount });
   await event(db, context, 'occurrence.linked', 'occurrence', id);
   const on = await today(db, context);
-  return { ...occurrenceDto((await getOccurrence(db, context.workspaceId, id))!, rule, on), released_minor: released };
+  return { ...occurrenceDto((await getOccurrence(db, context.workspaceId, id))!, rule, on), ...goal };
 }
 
 /** BR-08.8, M-8: the item is planned again, and the actual stays. Audited. */

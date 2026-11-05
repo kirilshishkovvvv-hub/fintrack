@@ -1,0 +1,277 @@
+<title>Safe to Spend Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* The app's own tokens (apps/web/src/app/globals.css): participants should test what will ship.
+   Layout: one phone-width column, with the facilitator's date switch above the app itself. */
+:root {
+  --bg: #f6f7f5; --surface: #ffffff; --surface-muted: #eef1ee; --text: #17201b; --text-muted: #4d5a53; --border: #d6ddd8;
+  --brand: #0f6e56; --brand-strong: #0a5541; --brand-tint: #e1f3ec; --on-brand: #ffffff;
+  --danger: #a32d2d; --warning: #7a4a05; --warning-tint: #faeeda; --focus: #1d6fd1;
+  --radius: 10px; --radius-lg: 16px; --shadow: 0 1px 2px rgba(16, 24, 20, 0.06);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #101513; --surface: #18201c; --surface-muted: #202a25; --text: #e9efeb; --text-muted: #a9b5ae; --border: #2e3a34;
+  --brand: #4fc89f; --brand-strong: #6fd6b2; --brand-tint: #16352b; --on-brand: #06261c;
+  --danger: #f09595; --warning: #f2c879; --warning-tint: #3a2a10; --focus: #8ab8ff; --shadow: none; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #101513; --surface: #18201c; --surface-muted: #202a25; --text: #e9efeb; --text-muted: #a9b5ae; --border: #2e3a34;
+  --brand: #4fc89f; --brand-strong: #6fd6b2; --brand-tint: #16352b; --on-brand: #06261c;
+  --danger: #f09595; --warning: #f2c879; --warning-tint: #3a2a10; --focus: #8ab8ff; --shadow: none; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px 96px; }
+.wrap { max-width: 26rem; margin: 0 auto; display: grid; gap: 12px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+h1 { font-size: 1.5rem; font-weight: 600; margin: 0; line-height: 1.25; }
+h2 { font-size: 1.1rem; font-weight: 600; margin: 0 0 .5rem; }
+p { margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1rem 1.1rem; box-shadow: var(--shadow); display: grid; gap: .6rem; }
+.hero { background: var(--brand-tint); }
+.eyebrow { font-size: .85rem; color: var(--text-muted); font-weight: 600; }
+.figure { font-size: 2.25rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.small { font-size: .875rem; }
+.muted { color: var(--text-muted); }
+.row { display: flex; justify-content: space-between; gap: .75rem; padding: .35rem 0; border-top: 1px solid var(--border); }
+.row:first-child { border-top: 0; }
+.row.total { font-weight: 700; }
+.row.sub { border-top: 0; padding: .1rem 0 .1rem .75rem; }
+.amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.notice { padding: .55rem .7rem; border-radius: var(--radius); background: var(--warning-tint); color: var(--warning); }
+.info { padding: .55rem .7rem; border-radius: var(--radius); background: var(--brand-tint); }
+.badge { display: inline-block; margin-left: .4rem; padding: 0 .45rem; border-radius: 999px; background: var(--warning-tint); color: var(--warning); font-size: .75rem; font-weight: 600; }
+details summary { cursor: pointer; color: var(--brand-strong); font-weight: 500; min-height: 44px; display: flex; align-items: center; }
+label { font-weight: 500; display: block; margin-bottom: .25rem; }
+input[type=text], select { width: 100%; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .65rem .75rem; min-height: 44px; }
+.choice { display: grid; grid-auto-flow: row; gap: .35rem; background: var(--surface-muted); border-radius: var(--radius); padding: .25rem; }
+.choice label { margin: 0; padding: .55rem .6rem; border-radius: 8px; cursor: pointer; }
+.choice label:has(input:checked) { background: var(--surface); box-shadow: var(--shadow); }
+.choice label:has(input:focus-visible) { outline: 3px solid var(--focus); }
+.btn { font: inherit; font-weight: 600; border-radius: var(--radius); padding: .7rem 1.1rem; min-height: 44px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+.btn.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.bar { height: 8px; border-radius: 4px; background: var(--surface-muted); overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--brand); }
+.facilitator { border: 1px dashed var(--border); border-radius: var(--radius); padding: .55rem .7rem; display: grid; gap: .4rem; }
+.facilitator .days { display: flex; flex-wrap: wrap; gap: .35rem; }
+.facilitator button { font: inherit; font-size: .85rem; padding: .3rem .6rem; min-height: 36px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+.facilitator button[aria-pressed=true] { background: var(--text); color: var(--bg); }
+nav { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); display: flex; justify-content: center; gap: .25rem; padding: .35rem max(16px, env(safe-area-inset-right, 0px)) calc(.35rem + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+nav button { flex: 1 1 0; max-width: 6.5rem; font: inherit; font-size: .8rem; background: none; border: 0; color: var(--text-muted); padding: .4rem .2rem; min-height: 44px; cursor: pointer; border-radius: 8px; }
+nav button[aria-current=page] { color: var(--brand-strong); font-weight: 700; }
+nav .add { color: var(--brand-strong); font-weight: 700; }
+@media (prefers-reduced-motion: no-preference) { .bar span { transition: width .2s; } }
+</style>
+
+<div class="wrap">
+  <div class="facilitator small">
+    <strong>Practice app. Every figure is invented.</strong>
+    <span class="muted">For the person running the session: choose the day.</span>
+    <div class="days" role="group" aria-label="Day shown">
+      <button type="button" data-day="18" id="day-18">18 March</button>
+      <button type="button" data-day="25" id="day-25">25 March, salary not here yet</button>
+      <button type="button" data-day="26" id="day-26">26 March, salary late</button>
+      <button type="button" id="reset">Start over</button>
+    </div>
+  </div>
+  <main id="view"></main>
+</div>
+<nav aria-label="Main">
+  <button type="button" data-view="home" id="nav-home">Home</button>
+  <button type="button" data-view="plan" id="nav-plan">Plan</button>
+  <button type="button" data-view="add" class="add" id="nav-add">+ Add</button>
+  <button type="button" data-view="goals" id="nav-goals">Goals</button>
+  <button type="button" data-view="accounts" id="nav-accounts">Accounts</button>
+</nav>
+
+<script>
+// The figures follow §7.8 Example 1. The golden tests "§7.8 Example 1" check them against the
+// real formula, so a change there means a change here. This page never saves anything.
+const start = { day: '18', view: 'home', spent: 0, released: 0, saved: null };
+let state = { ...start };
+const eur = (cents) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR' }).format(Math.abs(cents) / 100);
+const signed = (cents) => (cents < 0 ? '−' : '') + eur(cents);
+
+const DAYS = {
+  18: {
+    today: '18 Mar', until: '24 Mar', days: 7,
+    bills: [['Phone', 2500, '20 Mar'], ['Electricity (estimate)', 7000, '22 Mar']],
+    payday: [['Rent', 30000, '25 Mar']],
+    late: false,
+  },
+  25: {
+    today: '25 Mar', until: '25 Mar', days: 1,
+    bills: [['Phone', 2500, 'overdue'], ['Electricity (estimate)', 7000, 'overdue'], ['Rent', 30000, 'today']],
+    payday: [],
+    late: false,
+  },
+  26: {
+    today: '26 Mar', until: '24 Apr', days: 30,
+    bills: [['Phone', 2500, 'overdue'], ['Electricity (estimate)', 7000, 'overdue'], ['Rent', 30000, 'overdue'], ['Phone', 2500, '20 Apr'], ['Electricity (estimate)', 7000, '22 Apr']],
+    payday: [['Rent', 30000, '25 Apr']],
+    late: true,
+  },
+};
+
+function figures() {
+  const day = DAYS[state.day];
+  const current = 145000 - state.spent;
+  const wallet = 5000;
+  const elf = current + wallet;
+  const billsTotal = day.bills.reduce((sum, bill) => sum + bill[1], 0);
+  const card = 12000;
+  const goal = 20000 - state.released;
+  const value = elf - billsTotal - card - goal;
+  return { day, current, wallet, elf, billsTotal, card, goal, value, perDay: value > 0 ? Math.floor(value / day.days) : null };
+}
+
+const row = (label, amount, cls = '') => `<div class="row ${cls}"><span>${label}</span><span class="amount">${amount}</span></div>`;
+
+function home() {
+  const f = figures();
+  const short = f.value < 0;
+  return `
+    <section class="card hero" aria-labelledby="sts">
+      <p class="eyebrow" id="sts">Safe to spend until ${f.day.until}</p>
+      <p class="figure">${signed(f.value)}</p>
+      ${short ? `<p class="small" role="status">Shortfall of ${eur(f.value)} until your salary arrives.</p>` : f.perDay !== null ? `<p class="small">About ${eur(f.perDay)} a day</p>` : ''}
+      <p class="small muted">This isn't your bank balance. It's what's left after your bills, card debt, reserve and goal money.</p>
+      ${f.day.late ? `<p class="notice small">Salary expected on 25 Mar has not arrived.</p>` : ''}
+      ${f.day.payday.map(([name, amount, date]) => `<p class="notice small">Due on payday: ${name}, ${eur(amount)} on ${date}. Your salary covers this, so it isn't taken off yet.</p>`).join('')}
+      <div>
+        ${row('Available in spendable accounts', signed(f.elf))}
+        ${row('Bills and card debt', '−' + eur(f.billsTotal + f.card))}
+        ${row('Protected reserve', '−' + eur(0))}
+        ${row('Goal money', '−' + eur(f.goal))}
+        ${row('Safe to spend', signed(f.value), 'total')}
+      </div>
+      <details id="breakdown">
+        <summary>How it's calculated</summary>
+        ${row('Current account', signed(f.current), 'sub small muted')}
+        ${row('Cash wallet', eur(f.wallet), 'sub small muted')}
+        <p class="small" style="margin-top:.4rem">Bills and card debt</p>
+        ${f.day.bills.map(([name, amount, when]) => row(`${name} · ${when}`, '−' + eur(amount), 'sub small muted')).join('')}
+        ${row('Owed on Credit card', '−' + eur(f.card), 'sub small muted')}
+        <p class="small" style="margin-top:.4rem">Goal money</p>
+        ${row('Holiday', '−' + eur(f.goal), 'sub small muted')}
+        <p class="small muted" style="margin-top:.4rem">Not included in this figure: your Savings account (${eur(400000)}), your next salary (${eur(210000)}), and available credit (${eur(88000)}).</p>
+      </details>
+      <p class="small muted">Last bank import: 2 days ago</p>
+    </section>
+    <section class="card">
+      <h2>Your accounts</h2>
+      ${row('Current account', signed(f.current))}
+      ${row('Cash wallet', eur(f.wallet))}
+      ${row('Savings', eur(400000))}
+      ${row('Credit card (owed)', eur(f.card))}
+    </section>
+    ${state.saved ? `<p class="info small" role="status">${state.saved}</p>` : ''}`;
+}
+
+function plan() {
+  const f = figures();
+  const coming = f.day.bills.filter((bill) => bill[2] !== 'overdue');
+  const overdue = f.day.bills.filter((bill) => bill[2] === 'overdue');
+  const line = ([name, amount, when]) => row(`${name}<br><span class="small muted">${when === 'overdue' ? 'Overdue' : when}</span>`, '−' + eur(amount));
+  return `
+    <h1>Plan</h1>
+    ${overdue.length ? `<section class="card"><h2>Overdue</h2>${overdue.map(line).join('')}</section>` : ''}
+    <section class="card">
+      <h2>Next 30 days</h2>
+      ${coming.map(line).join('')}
+      ${f.day.payday.map(([name, amount, when]) => row(`${name} <span class="badge">On payday</span><br><span class="small muted">${when}</span>`, '−' + eur(amount))).join('')}
+      ${f.day.late ? '' : row(`Salary <span class="badge">Payday</span><br><span class="small muted">${state.day === '25' ? 'today' : '25 Mar'}</span>`, '+' + eur(210000))}
+    </section>`;
+}
+
+function add() {
+  return `
+    <h1>New entry</h1>
+    <form class="card" id="entry">
+      <div><label for="amount">Amount</label><input id="amount" type="text" inputmode="decimal" autocomplete="off" required></div>
+      <div><label for="account">Account</label><select id="account"><option>Current account</option></select></div>
+      <div><label for="category">Category</label><select id="category"><option>Household</option><option>Insurance</option><option>Food</option><option>Travel</option></select></div>
+      <div><label for="payee">Description (optional)</label><input id="payee" type="text" autocomplete="off"></div>
+      ${figures().goal > 0 ? `<fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:500;margin-bottom:.35rem">Is this paid from your goal money?</legend>
+        <div class="choice">
+          <label><input type="radio" name="goal" value="no" checked> No</label>
+          <label><input type="radio" name="goal" value="holiday"> Holiday (${eur(figures().goal)})</label>
+        </div></fieldset>` : ''}
+      <p class="small" id="problem" role="alert" hidden style="color:var(--danger)">Enter an amount like 150.00.</p>
+      <button class="btn primary" type="submit">Save</button>
+    </form>`;
+}
+
+function goals() {
+  const f = figures();
+  return `
+    <h1>Goals</h1>
+    <section class="card">
+      <h2>Holiday</h2>
+      <p class="amount">${eur(f.goal)} of ${eur(100000)}</p>
+      <div class="bar" aria-hidden="true"><span style="width:${(f.goal / 100000) * 100}%"></span></div>
+      ${state.released ? `<p class="small muted">Used: ${eur(state.released)}</p>` : ''}
+      ${row('Set aside on Current account', eur(f.goal))}
+    </section>`;
+}
+
+function accounts() {
+  const f = figures();
+  return `
+    <h1>Accounts</h1>
+    <section class="card">
+      ${row('Current account', signed(f.current))}
+      ${row('Cash wallet', eur(f.wallet))}
+      ${row('Savings', eur(400000))}
+      ${row('Credit card (owed)', eur(f.card))}
+    </section>`;
+}
+
+const VIEWS = { home, plan, add, goals, accounts };
+
+function render() {
+  document.getElementById('view').innerHTML = `<div style="display:grid;gap:12px">${VIEWS[state.view]()}</div>`;
+  for (const button of document.querySelectorAll('nav button')) {
+    if (button.dataset.view === state.view) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+  for (const button of document.querySelectorAll('[data-day]')) button.setAttribute('aria-pressed', String(button.dataset.day === state.day));
+  document.getElementById('entry')?.addEventListener('submit', save);
+}
+
+function parse(text) {
+  const clean = text.trim().replace(/[€\s]/g, '').replace(',', '.');
+  if (!/^\d+(\.\d{1,2})?$/.test(clean)) return null;
+  const cents = Math.round(Number(clean) * 100);
+  return cents > 0 ? cents : null;
+}
+
+function save(event) {
+  event.preventDefault();
+  const amount = parse(document.getElementById('amount').value);
+  if (amount === null) {
+    document.getElementById('problem').hidden = false;
+    return;
+  }
+  const fromGoal = event.target.querySelector('input[name=goal]:checked')?.value === 'holiday';
+  const release = fromGoal ? Math.min(amount, figures().goal) : 0;
+  state = { ...state, spent: state.spent + amount, released: state.released + release, view: 'home', saved: release > 0 ? `Saved. ${eur(release)} came out of your Holiday money.` : 'Saved.' };
+  render();
+  window.scrollTo(0, 0);
+}
+
+document.querySelector('nav').addEventListener('click', (event) => {
+  const view = event.target.closest('button')?.dataset.view;
+  if (view) {
+    state = { ...state, view, saved: null };
+    render();
+    window.scrollTo(0, 0);
+  }
+});
+document.querySelector('.facilitator').addEventListener('click', (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  state = button.id === 'reset' ? { ...start } : { ...state, day: button.dataset.day, view: 'home', saved: null };
+  render();
+});
+render();
+</script>

@@ -37,6 +37,10 @@ export function RuleForm({
   const [isPayday, setIsPayday] = useState(rule?.isPayday ?? payday);
   const [accountId, setAccountId] = useState(rule?.accountId ?? accounts[0]?.id ?? '');
   const [problem, setProblem] = useState<string | null>(null);
+  // BR-08.1: a template can be split across categories; the first line stays where it always is.
+  const [extra, setExtra] = useState<{ categoryId: string; amount: string }[]>(() =>
+    rule && (rule.kind === 'expense' || rule.kind === 'income') ? rule.lines.slice(1).map((line) => ({ categoryId: line.ledgerAccountId, amount: editableAmount(line.amount_minor) })) : [],
+  );
   const others = accounts.filter((account) => account.id !== accountId);
   const label = (category: Category) => {
     const parent = category.parentId ? categories.find((other) => other.id === category.parentId) : undefined;
@@ -67,6 +71,13 @@ export function RuleForm({
         ? [{ ledgerAccountId: counterpart, amount_minor: amount }, ...(interest > 0 ? [{ ledgerAccountId: interestCategory, amount_minor: interest }] : [])]
         : [{ ledgerAccountId: counterpart, amount_minor: amount }];
     if (!counterpart) return setProblem(t('chooseTarget'));
+    if (kind === 'expense' || kind === 'income') {
+      for (const line of extra) {
+        const value = parseUserAmount(line.amount);
+        if (value === null || value <= 0 || !line.categoryId) return setProblem(t('badAmount'));
+        lines.push({ ledgerAccountId: line.categoryId, amount_minor: value });
+      }
+    }
     setProblem(null);
     const interval = NEEDS_INTERVAL.has(frequency) ? Number(form.get('interval') || 1) : 1;
     const startDate = String(form.get('startDate'));
@@ -102,7 +113,15 @@ export function RuleForm({
         <div className="segmented segmented-wrap">
           {KINDS.map((option) => (
             <label key={option}>
-              <input type="radio" name="kind" checked={kind === option} onChange={() => setKind(option)} /> {t(`kinds.${option}`)}
+              <input
+                type="radio"
+                name="kind"
+                checked={kind === option}
+                onChange={() => {
+                  setKind(option);
+                  setExtra([]);
+                }}
+              /> {t(`kinds.${option}`)}
             </label>
           ))}
         </div>
@@ -154,6 +173,34 @@ export function RuleForm({
           </div>
         )}
       </div>
+      {(kind === 'expense' || kind === 'income') && (
+        <>
+          {extra.map((line, index) => (
+            <div className="grid-2" key={index}>
+              <div className="field">
+                <label htmlFor={`extra-category-${index}`}>{t('lineCategory', { number: index + 2 })}</label>
+                <select id={`extra-category-${index}`} value={line.categoryId} onChange={(event) => setExtra(extra.map((other, at) => (at === index ? { ...other, categoryId: event.target.value } : other)))}>
+                  {inKind.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {label(category)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor={`extra-amount-${index}`}>{t('lineAmount', { number: index + 2 })}</label>
+                <input id={`extra-amount-${index}`} type="text" inputMode="decimal" value={line.amount} onChange={(event) => setExtra(extra.map((other, at) => (at === index ? { ...other, amount: event.target.value } : other)))} />
+                <button className="btn btn-ghost" type="button" aria-label={t('removeLine', { number: index + 2 })} onClick={() => setExtra(extra.filter((_, at) => at !== index))}>
+                  {t('remove')}
+                </button>
+              </div>
+            </div>
+          ))}
+          <button className="btn btn-ghost" type="button" onClick={() => setExtra([...extra, { categoryId: inKind[0]?.id ?? '', amount: '' }])}>
+            {t('addLine')}
+          </button>
+        </>
+      )}
       {kind === 'debt_payment' && (
         <div className="field">
           <label htmlFor="interestCategory">{t('interestCategory')}</label>

@@ -22,6 +22,7 @@ interface BudgetRow {
   netRefund: boolean;
   thresholds: number[];
   alerted: number[];
+  instalments: { description: string | null; amount_minor: number }[];
 }
 
 interface Budgets {
@@ -80,7 +81,17 @@ export default function BudgetsPage() {
     const form = new FormData(event.currentTarget);
     const limit = parseUserAmount(String(form.get('limit') ?? ''));
     if (limit === null || limit < 0) return setError(t('badAmount'));
-    void put(categoryId, { limit_minor: limit, applyForward: form.get('onlyThisMonth') !== 'on' });
+    const thresholds = String(form.get('thresholds') ?? '').split(/[,\s]+/).filter(Boolean).map(Number);
+    if (thresholds.length < 1 || thresholds.length > 3 || thresholds.some((value) => !Number.isInteger(value) || value < 1 || value > 200)) return setError(t('badThresholds'));
+    void put(categoryId, { limit_minor: limit, thresholds, applyForward: form.get('onlyThisMonth') !== 'on' });
+  }
+
+  function saveOverall(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = String(new FormData(event.currentTarget).get('overall') ?? '').trim();
+    const limit = text ? parseUserAmount(text) : null;
+    if (text && (limit === null || limit < 0)) return setError(t('badAmount'));
+    void put('overall', { limit_minor: limit });
   }
 
   function add(event: React.FormEvent<HTMLFormElement>) {
@@ -145,6 +156,11 @@ export default function BudgetsPage() {
                     {t('edit')}
                   </button>
                 </div>
+                {row.instalments.map((line, index) => (
+                  <p className="small muted" key={index}>
+                    {t('includesInstalment', { name: line.description ?? t('instalmentPurchase'), amount: money(line.amount_minor) })}
+                  </p>
+                ))}
                 <div className="split-bar" aria-hidden="true">
                   <span style={{ width: `${width(row)}%`, background: row.over ? 'var(--danger)' : 'var(--brand)' }} />
                 </div>
@@ -153,6 +169,10 @@ export default function BudgetsPage() {
                     <div className="field">
                       <label htmlFor={`limit-${row.categoryId}`}>{t('limit')}</label>
                       <input id={`limit-${row.categoryId}`} name="limit" type="text" inputMode="decimal" defaultValue={editableAmount(row.limit_minor)} required />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`thresholds-${row.categoryId}`}>{t('thresholds')}</label>
+                      <input id={`thresholds-${row.categoryId}`} name="thresholds" type="text" inputMode="numeric" defaultValue={row.thresholds.join(', ')} />
                     </div>
                     <label className="check">
                       <input type="checkbox" name="onlyThisMonth" /> <span>{t('onlyThisMonth')}</span>
@@ -177,6 +197,20 @@ export default function BudgetsPage() {
         )}
       </section>
       <p className="small muted">{t('notMoney')}</p>
+      {budgets && (
+        <form className="card" onSubmit={saveOverall} key={budgets.overall?.limit_minor ?? 'none'}>
+          <div className="field">
+            <label htmlFor="overall">{t('overall')}</label>
+            <input id="overall" name="overall" type="text" inputMode="decimal" defaultValue={budgets.overall ? editableAmount(budgets.overall.limit_minor) : ''} aria-describedby="overall-hint" />
+            <span id="overall-hint" className="hint">
+              {budgets.overall ? t('overallSpent', { amount: money(budgets.overall.spent_minor) }) : t('overallHint')}
+            </span>
+          </div>
+          <button className="btn" type="submit" disabled={busy}>
+            {t('overallSave')}
+          </button>
+        </form>
+      )}
       {data && available.length > 0 && (
         <form className="card" onSubmit={add}>
           <h2>{t('addTitle')}</h2>

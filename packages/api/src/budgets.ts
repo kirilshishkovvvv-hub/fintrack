@@ -17,6 +17,7 @@ import {
   getWorkspace,
   accountDetails,
   listBudgetAlerts,
+  instalmentLines,
   listBudgetLimits,
   loadChart,
   loadPlannedItems,
@@ -68,6 +69,7 @@ export async function getBudgets(db: Db, context: RequestContext, month: string)
   const limits = await listBudgetLimits(db, context.workspaceId);
   const planned = await loadPlannedItems(db, context.workspaceId);
   const alerts = await listBudgetAlerts(db, context.workspaceId, firstOf(month));
+  const instalments = await instalmentLines(db, context.workspaceId, firstOf(month));
 
   const rows = [];
   for (const account of chart.all()) {
@@ -92,6 +94,8 @@ export async function getBudgets(db: Db, context: RequestContext, month: string)
       thresholds: row.thresholds,
       /** Fired at some point this month, whatever Spent is now (AC-07.3). */
       alerted: alerts.filter((alert) => alert.categoryId === account.id).map((alert) => alert.threshold).sort((a, b) => a - b),
+      /** BR-07.13: why an overspent budget may look that way. */
+      instalments: spent > limit ? instalments.filter((line) => chart.categorySubtree(account.id).has(line.categoryId)).map((line) => ({ description: line.description, amount_minor: line.amount })) : [],
     });
   }
   const totalLimit = rows.reduce((sum, row) => sum + row.limit_minor, 0);

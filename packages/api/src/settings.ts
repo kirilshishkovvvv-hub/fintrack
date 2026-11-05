@@ -64,6 +64,10 @@ export async function accountDetail(db: Db, context: RequestContext, id: string)
     institution: details.institution,
     creditLimit_minor: details.creditLimit,
     notes: details.notes,
+    loanPrincipal_minor: details.loanPrincipal,
+    loanRate_bp: details.loanRateBp,
+    loanInstallment_minor: details.loanInstallment,
+    loanTerm_months: details.loanTermMonths,
     dedicatedToGoal: details.dedicatedGoalId !== null,
     version: details.version,
     openingAmount_minor: signedFor(chart, id, openingPosted),
@@ -95,6 +99,11 @@ export async function changeAccount(db: Db, context: RequestContext, id: string,
     institution: input.institution === undefined ? details.institution : input.institution || null,
     creditLimit: !isCard ? null : input.creditLimit_minor === undefined ? details.creditLimit : input.creditLimit_minor,
     notes: input.notes === undefined ? details.notes : input.notes || null,
+    // BR-10.5: for information only, and only on a loan.
+    loanPrincipal: type !== 'loan' ? null : input.loanPrincipal_minor === undefined ? details.loanPrincipal : input.loanPrincipal_minor,
+    loanRateBp: type !== 'loan' ? null : input.loanRate_bp === undefined ? details.loanRateBp : input.loanRate_bp,
+    loanInstallment: type !== 'loan' ? null : input.loanInstallment_minor === undefined ? details.loanInstallment : input.loanInstallment_minor,
+    loanTermMonths: type !== 'loan' ? null : input.loanTerm_months === undefined ? details.loanTermMonths : input.loanTerm_months,
   });
   await event(db, context, 'account.updated', 'account', id);
   return accountDetail(db, context, id);

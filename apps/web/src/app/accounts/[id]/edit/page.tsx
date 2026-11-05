@@ -15,6 +15,10 @@ interface AccountDetail extends Account {
   institution: string | null;
   creditLimit_minor: number | null;
   notes: string | null;
+  loanPrincipal_minor: number | null;
+  loanRate_bp: number | null;
+  loanInstallment_minor: number | null;
+  loanTerm_months: number | null;
   dedicatedToGoal: boolean;
   openingAmount_minor: number;
   openingHeldByReconciliation: boolean;
@@ -76,6 +80,19 @@ export default function EditAccountPage() {
     const limitText = String(form.get('creditLimit') ?? '').trim();
     const limit = limitText ? parseUserAmount(limitText) : null;
     if (limitText && (limit === null || limit < 0)) return setError(t('badAmount'));
+    const optionalAmount = (name: string) => {
+      const text = String(form.get(name) ?? '').trim();
+      return text ? parseUserAmount(text) : null;
+    };
+    const principal = optionalAmount('loanPrincipal');
+    const installment = optionalAmount('loanInstallment');
+    const rateText = String(form.get('loanRate') ?? '').trim().replace(',', '.');
+    const termText = String(form.get('loanTerm') ?? '').trim();
+    if (type === 'loan') {
+      if ((String(form.get('loanPrincipal') ?? '').trim() && (principal === null || principal < 0)) || (String(form.get('loanInstallment') ?? '').trim() && (installment === null || installment < 0))) return setError(t('badAmount'));
+      if (rateText && !/^\d{1,4}(\.\d{1,2})?$/.test(rateText)) return setError(t('badRate'));
+      if (termText && !/^\d{1,4}$/.test(termText)) return setError(t('badTerm'));
+    }
     void run(
       () =>
         api('PATCH', `/api/v1/accounts/${id}`, {
@@ -87,6 +104,14 @@ export default function EditAccountPage() {
             notes: String(form.get('notes') ?? '').trim() || null,
             ...(account.class === 'cash' && !account.dedicatedToGoal ? { spendable: form.get('spendable') === 'on' } : {}),
             ...(isCard ? { cardReserve: form.get('cardReserve') === 'on', creditLimit_minor: limit } : {}),
+            ...(type === 'loan'
+              ? {
+                  loanPrincipal_minor: principal,
+                  loanRate_bp: rateText ? Math.round(Number(rateText) * 100) : null,
+                  loanInstallment_minor: installment,
+                  loanTerm_months: termText ? Number(termText) : null,
+                }
+              : {}),
           },
         }),
       t('saved'),
@@ -164,6 +189,29 @@ export default function EditAccountPage() {
               <span id="limit-hint" className="hint">
                 {t('creditLimitHint')}
               </span>
+            </div>
+          </>
+        )}
+        {type === 'loan' && (
+          <>
+            <p className="small muted">{t('loanHint')}</p>
+            <div className="grid-2">
+              <div className="field">
+                <label htmlFor="loanPrincipal">{t('loanPrincipal')}</label>
+                <input id="loanPrincipal" name="loanPrincipal" type="text" inputMode="decimal" defaultValue={account.loanPrincipal_minor === null ? '' : editableAmount(account.loanPrincipal_minor)} />
+              </div>
+              <div className="field">
+                <label htmlFor="loanRate">{t('loanRate')}</label>
+                <input id="loanRate" name="loanRate" type="text" inputMode="decimal" defaultValue={account.loanRate_bp === null ? '' : (account.loanRate_bp / 100).toString()} />
+              </div>
+              <div className="field">
+                <label htmlFor="loanInstallment">{t('loanInstallment')}</label>
+                <input id="loanInstallment" name="loanInstallment" type="text" inputMode="decimal" defaultValue={account.loanInstallment_minor === null ? '' : editableAmount(account.loanInstallment_minor)} />
+              </div>
+              <div className="field">
+                <label htmlFor="loanTerm">{t('loanTerm')}</label>
+                <input id="loanTerm" name="loanTerm" type="text" inputMode="numeric" defaultValue={account.loanTerm_months ?? ''} />
+              </div>
             </div>
           </>
         )}

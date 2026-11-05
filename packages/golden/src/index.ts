@@ -19,6 +19,7 @@ export const scenarios: Scenario[] = [...basics, ...cardsAndDebts, ...refunds, .
  */
 export const notYetEncoded: { id: string; reason: string; stage: number }[] = [
   { id: 'GT-10', reason: 'Transfers in Transit is a Should Have', stage: 4 },
-  { id: 'GT-37', reason: 'an import row matching a planned occurrence; the rest of FR-16 is covered by the API tests', stage: 5 },
-  { id: 'GT-38 (occurrence)', reason: 'undoing an import returns a matched occurrence to Planned; the ledger part is covered by the API tests', stage: 5 },
+  { id: 'GT-46', reason: 'investment contribution and valuation; investment accounts are a Should', stage: 6 },
+  { id: 'GT-47', reason: 'reinvested dividend with a valuation; investment accounts are a Should', stage: 6 },
+  { id: 'GT-60', reason: 'month-by-month comparison report', stage: 6 },
 ];
