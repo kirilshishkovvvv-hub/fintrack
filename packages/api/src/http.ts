@@ -32,6 +32,9 @@ export type ProblemCode =
   | 'PAYEE_NAME_TAKEN'
   | 'OPENING_DATE_TOO_LATE'
   | 'CURRENCY_LOCKED'
+  | 'ALLOCATION_EXCEEDS_UNALLOCATED'
+  | 'ALREADY_LINKED'
+  | 'BUDGET_BRANCH_CONFLICT'
   | 'INTERNAL';
 
 export class ApiError extends Error {

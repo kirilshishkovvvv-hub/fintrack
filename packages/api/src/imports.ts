@@ -21,6 +21,7 @@ import {
   type Chart,
   type ImportSettings,
   type Transaction,
+  suggestMatches,
 } from '@fintrack/domain';
 import {
   changeTransactionStatus,
@@ -54,6 +55,14 @@ import {
   type RequestContext,
   type TransactionRecord,
   type TransactionSnapshot,
+  completeOccurrence,
+  ensureOccurrences,
+  getOccurrence,
+  listRules,
+  loadPlannedItems,
+  reopenLinkedOccurrence,
+  rowOccurrences,
+  setRowOccurrence,
 } from '@fintrack/db';
 import type { z } from 'zod';
 import { ApiError } from './http.ts';
@@ -181,8 +190,12 @@ function event(db: Db, context: RequestContext, type: string, objectId: string, 
   return recordAuditEvent(db, { workspaceId: context.workspaceId, userId: context.userId, type, objectType, objectId });
 }
 
-function rowDto(row: ImportRow) {
+function rowDto(row: ImportRow, plan: PlanView = NO_PLAN) {
+  const matches = plan.suggestions.get(row.id) ?? [];
   return {
+    occurrenceId: plan.accepted.get(row.id) ?? null,
+    /** M-5: offered, and only ever applied by the user. */
+    planSuggestions: matches.map((match) => ({ occurrenceId: match.item.id, name: match.item.name, dueDate: match.item.dueDate, amount_minor: match.item.amount, outsideExpectedRange: match.outsideExpectedRange })),
     id: row.id,
     rowNo: row.rowNo,
     date: row.date,
@@ -203,7 +216,29 @@ function rowDto(row: ImportRow) {
   };
 }
 
-function batchDto(batch: BatchRow, rows: readonly ImportRow[], currency: string) {
+interface PlanView {
+  suggestions: Map<string, ReturnType<typeof suggestMatches>>;
+  accepted: Map<string, string>;
+}
+const NO_PLAN: PlanView = { suggestions: new Map(), accepted: new Map() };
+
+/** BR-16.10: which planned items each row of a review might be (M-1 to M-4). */
+async function planView(db: Db, context: RequestContext, batch: BatchRow, rows: readonly ImportRow[]): Promise<PlanView> {
+  const accepted = await rowOccurrences(db, context.workspaceId, batch.id);
+  const suggestions = new Map<string, ReturnType<typeof suggestMatches>>();
+  if (batch.status !== 'review') return { suggestions, accepted };
+  await ensureOccurrences(db, context.workspaceId, todayIn((await getWorkspace(db, context.workspaceId)).timezone));
+  const planned = await loadPlannedItems(db, context.workspaceId);
+  for (const row of rows) {
+    if (row.state !== 'pending' || row.amount === null || row.date === null || row.classification !== 'new') continue;
+    const payer = row.counterparty ?? row.description;
+    const found = suggestMatches({ date: row.date, accountId: row.accountId, direction: row.amount < 0 ? 'out' : 'in', amount: Math.abs(row.amount), payer: payer ? normalizeDescription(payer) : null }, planned);
+    if (found.length > 0) suggestions.set(row.id, found);
+  }
+  return { suggestions, accepted };
+}
+
+function batchDto(batch: BatchRow, rows: readonly ImportRow[], currency: string, plan: PlanView = NO_PLAN) {
   const count = <K extends string>(values: K[]) => {
     const counts: Partial<Record<K, number>> = {};
     for (const value of values) counts[value] = (counts[value] ?? 0) + 1;
@@ -215,7 +250,8 @@ function batchDto(batch: BatchRow, rows: readonly ImportRow[], currency: string)
     counts: count(rows.map((row) => row.classification)),
     states: count(rows.map((row) => row.state)),
     undecided: rows.filter((row) => row.state === 'pending' && !row.decision).length,
-    rows: rows.map(rowDto),
+    rows: rows.map((row) => rowDto(row, plan)),
+    matchesPlan: plan.suggestions.size,
   };
 }
 
@@ -237,7 +273,8 @@ export async function listImports(db: Db, context: RequestContext) {
 
 export async function getImport(db: Db, context: RequestContext, id: string) {
   const batch = await loadBatch(db, context, id);
-  return batchDto(batch, await listRows(db, context.workspaceId, id), (await getWorkspace(db, context.workspaceId)).currency);
+  const rows = await listRows(db, context.workspaceId, id);
+  return batchDto(batch, rows, (await getWorkspace(db, context.workspaceId)).currency, await planView(db, context, batch, rows));
 }
 
 export const getProfiles = (db: Db, context: RequestContext) => listProfiles(db, context.workspaceId);
@@ -282,6 +319,20 @@ export async function decideRows(db: Db, context: RequestContext, id: string, ex
     return { id: row.id, decision, categoryId, counterAccountId, candidateTransactionId: pairStays ? row.candidateTransactionId : null };
   });
   await updateRowDecisions(db, context.workspaceId, changes);
+  // An accepted planned item also lends its category, unless the user chose one (GT-37).
+  const rules = input.decisions.some((change) => change.occurrenceId) ? await listRules(db, context.workspaceId) : [];
+  for (const change of input.decisions) {
+    if (change.occurrenceId === undefined) continue;
+    await setRowOccurrence(db, context.workspaceId, change.rowId, change.occurrenceId);
+    if (!change.occurrenceId) continue;
+    const occurrence = await getOccurrence(db, context.workspaceId, change.occurrenceId);
+    if (!occurrence || occurrence.status !== 'planned') throw new ApiError(422, 'INVALID_REFERENCE', 'That planned item is not open');
+    const rule = rules.find((candidate) => candidate.id === occurrence.ruleId);
+    const row = rows.get(change.rowId)!;
+    if (rule && !row.categoryId && !change.categoryId && (rule.kind === 'expense' || rule.kind === 'income') && rule.lines[0]) {
+      await updateRowDecisions(db, context.workspaceId, [{ id: row.id, decision: row.decision, categoryId: rule.lines[0].ledgerAccountId, counterAccountId: row.counterAccountId, candidateTransactionId: row.candidateTransactionId }]);
+    }
+  }
   const version = await setBatchStatus(db, context.workspaceId, id, null, expectedVersion);
   if (version === null) throw new VersionConflict('This import was changed since you opened it');
   return getImport(db, context, id);
@@ -389,6 +440,12 @@ export async function confirmImport(db: Db, context: RequestContext, id: string,
 
   await insertTransactionsBulk(db, context.workspaceId, created, { origin: 'import', userId: context.userId });
   await updateRowOutcomes(db, context.workspaceId, outcomes);
+  // An accepted match completes its planned item; one taken since the review stays with the row unlinked.
+  const accepted = await rowOccurrences(db, context.workspaceId, id);
+  for (const outcome of outcomes) {
+    const occurrenceId = accepted.get(outcome.id);
+    if (occurrenceId && outcome.createdTransactionId) await completeOccurrence(db, context.workspaceId, occurrenceId, outcome.createdTransactionId);
+  }
   if ((await setBatchStatus(db, context.workspaceId, id, 'confirmed', batch.version)) === null) throw new VersionConflict('This import was changed since you opened it');
   await event(db, context, 'import.confirmed', id);
   return getImport(db, context, id);
@@ -415,6 +472,8 @@ export async function undoImport(db: Db, context: RequestContext, id: string, in
     const created = row.createdTransactionId ? records.get(row.createdTransactionId) : undefined;
     if (created?.tx.status === 'posted') {
       await changeTransactionStatus(db, context.workspaceId, created.tx.id, { to: 'voided', type: 'void', expectedVersion: created.version, userId: context.userId });
+      // GT-38: a matched occurrence goes back to Planned.
+      await reopenLinkedOccurrence(db, context.workspaceId, created.tx.id);
     }
     const replaced = row.replacedSnapshot as TransactionSnapshot | null;
     const current = row.claimedTransactionId ? records.get(row.claimedTransactionId) : undefined;

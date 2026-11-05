@@ -4,8 +4,13 @@
  */
 import { Ledger, todayIn } from '@fintrack/domain';
 import {
+  ensureOccurrences,
   getWorkspace,
+  listBudgetLimits,
   listPayees,
+  loadAllocations,
+  loadPlannedItems,
+  setBudgetLimit,
   mergePayee,
   payeeNameTaken,
   updatePayee,
@@ -69,6 +74,13 @@ export async function setAccountArchived(db: Db, context: RequestContext, id: st
       balance_minor: ledger.balance(id, ALL_TIME),
     });
   }
+  if (archived && !account.archived) {
+    const today = todayIn((await getWorkspace(db, context.workspaceId)).timezone);
+    await ensureOccurrences(db, context.workspaceId, today);
+    const planned = await loadPlannedItems(db, context.workspaceId);
+    if (planned.some((item) => item.fromAccountId === id || item.toAccountId === id)) throw new ApiError(409, 'ARCHIVE_BLOCKED', 'End the planned items on this account first (FR-19)');
+    if ((await loadAllocations(db, context.workspaceId)).some((allocation) => allocation.accountId === id)) throw new ApiError(409, 'ARCHIVE_BLOCKED', 'Release the goal money on this account first (FR-19)');
+  }
   if ((account.archived ?? false) !== archived) {
     await setArchived(db, context.workspaceId, id, archived);
     await event(db, context, archived ? 'account.archived' : 'account.unarchived', 'account', id);
@@ -91,6 +103,13 @@ export async function setCategoryArchived(db: Db, context: RequestContext, id: s
   if ((category.archived ?? false) !== archived) {
     await setArchived(db, context.workspaceId, id, archived);
     await event(db, context, archived ? 'category.archived' : 'category.unarchived', 'category', id);
+    // FR-07: archiving ends an active budget from next month, and keeps this one.
+    if (archived && category.kind === 'expense') {
+      const today = todayIn((await getWorkspace(db, context.workspaceId)).timezone);
+      const [year, month] = today.split('-').map(Number) as [number, number];
+      const next = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+      if ((await listBudgetLimits(db, context.workspaceId)).some((row) => row.categoryId === id && row.limit !== null)) await setBudgetLimit(db, context.workspaceId, id, next, null, [80, 100], true);
+    }
   }
   return categoryDto({ ...category, archived });
 }

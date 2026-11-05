@@ -24,7 +24,7 @@ export async function setDeletionPending(db: Db, workspaceId: string, pending: b
 /** Deletes one workspace's rows in foreign-key order. Transactions take postings, versions and reconciliation items with them. */
 async function purgeWorkspace(db: Db, workspaceId: string): Promise<void> {
   const members = await db.query<{ user_id: string }>('SELECT user_id FROM fin.memberships WHERE workspace_id = $1', [workspaceId]);
-  for (const table of ['import_rows', 'import_batches', 'import_profiles', 'idempotency_records', 'transactions', 'reconciliations', 'payees', 'accounts', 'categories', 'ledger_accounts', 'memberships']) {
+  for (const table of ['import_rows', 'import_batches', 'import_profiles', 'budget_alert_events', 'budget_limits', 'allocation_events', 'goal_allocations', 'planned_occurrences', 'recurring_rule_lines', 'recurring_rules', 'idempotency_records', 'transactions', 'reconciliations', 'payees', 'accounts', 'goals', 'categories', 'ledger_accounts', 'memberships']) {
     await db.query(`DELETE FROM fin.${table} WHERE workspace_id = $1`, [workspaceId]);
   }
   for (const { user_id: userId } of members.rows) {

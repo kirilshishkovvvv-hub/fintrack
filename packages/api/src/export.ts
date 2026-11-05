@@ -10,7 +10,12 @@ import {
   currentConsents,
   getWorkspace,
   listReconciliations,
+  listBudgetLimits,
+  listGoals,
+  listOccurrences,
   listPayees,
+  listRules,
+  loadAllocations,
   listTransactionVersions,
   loadChart,
   loadTransactionRecords,
@@ -126,7 +131,7 @@ function parentName(chart: Chart, account: LedgerAccount): string | null {
 }
 
 /**
- * Builds the export package and records the audit event. Budgets, goals, rules and tags
+ * Builds the export package and records the audit event. Tags
  * join these files with the stages that bring them; the schema version covers that growth.
  */
 export async function buildExport(db: Db, context: RequestContext, password?: string): Promise<{ filename: string; zip: Buffer }> {
@@ -137,6 +142,11 @@ export async function buildExport(db: Db, context: RequestContext, password?: st
   const reconciliations = await listReconciliations(db, context.workspaceId);
   const consents = await currentConsents(db, context.userId);
   const payees = await listPayees(db, context.workspaceId);
+  const rules = await listRules(db, context.workspaceId);
+  const occurrences = await listOccurrences(db, context.workspaceId);
+  const goals = await listGoals(db, context.workspaceId);
+  const allocations = await loadAllocations(db, context.workspaceId);
+  const budgets = await listBudgetLimits(db, context.workspaceId);
   const ledger = new Ledger(chart, records.map((record) => record.tx));
   const today = todayIn(workspace.timezone);
   const { currency } = workspace;
@@ -213,6 +223,30 @@ export async function buildExport(db: Db, context: RequestContext, password?: st
       ),
     },
     {
+      name: 'budgets.csv',
+      data: toCsv(
+        ['category', 'from_month', 'limit', 'currency'],
+        budgets.map((row) => [row.categoryId ? chart.get(row.categoryId).name : 'Overall', row.effectiveMonth.slice(0, 7), row.limit === null ? null : formatAmount(row.limit), currency]),
+      ),
+    },
+    {
+      name: 'goals.csv',
+      data: toCsv(
+        ['id', 'name', 'funding', 'target', 'target_date', 'monthly', 'status'],
+        goals.map((goal) => [goal.id, goal.name, goal.fundingMethod, goal.target === null ? null : formatAmount(goal.target), goal.targetDate, goal.monthly === null ? null : formatAmount(goal.monthly), goal.status]),
+      ),
+    },
+    {
+      name: 'planned.csv',
+      data: toCsv(
+        ['id', 'rule', 'kind', 'original_date', 'due_date', 'amount', 'status', 'transaction'],
+        occurrences.map((occurrence) => {
+          const rule = rules.find((candidate) => candidate.id === occurrence.ruleId)!;
+          return [occurrence.id, rule.name, rule.kind, occurrence.originalDate, occurrence.dueDate, formatAmount(occurrence.amount), occurrence.status, occurrence.linkedTransactionId];
+        }),
+      ),
+    },
+    {
       name: 'reconciliations.csv',
       data: toCsv(
         ['id', 'account', 'statement_date', 'statement_balance', 'currency', 'status', 'completed_at', 'unlocked_at', 'transaction_count'],
@@ -239,6 +273,11 @@ export async function buildExport(db: Db, context: RequestContext, password?: st
             workspace: { name: workspace.name, currency, timezone: workspace.timezone, protectedReserve_minor: workspace.protectedReserveMinor },
             ledgerAccounts: chart.all(),
             payees,
+            recurringRules: rules,
+            plannedOccurrences: occurrences,
+            goals,
+            goalAllocations: allocations,
+            budgetLimits: budgets,
             balances_minor: Object.fromEntries(accounts.map((account) => [account.id, ledger.balance(account.id, today)])),
             transactions: records.map((record) => ({
               ...record.tx,

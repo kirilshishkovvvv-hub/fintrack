@@ -5,7 +5,6 @@
 import {
   build,
   Ledger,
-  safeToSpend,
   searchText,
   todayIn,
   validateTransaction,
@@ -19,7 +18,13 @@ import {
   changeTransactionStatus,
   accountDetails,
   categoryMeta,
+  completeOccurrence,
   createWorkspace,
+  ensureOccurrences,
+  loadAllocations,
+  loadPlannedItems,
+  relinkOccurrence,
+  reopenLinkedOccurrence,
   ensurePayee,
   findCategoryBySystemKey,
   learnPayeeCategory,
@@ -57,6 +62,8 @@ import type {
   editTransactionBody,
   transactionsQuery,
 } from './schemas.ts';
+import { evaluateBudgetAlerts } from './budgets.ts';
+import { matchSuggestions, releaseGoalMoney, safeToSpendFigures } from './plan-state.ts';
 import { DEFAULT_CATEGORIES } from './seed.ts';
 
 export const CLASS_BY_TYPE: Record<AccountType, AccountClass> = {
@@ -296,6 +303,7 @@ function buildTransfer(id: string, input: TransferInput): Transaction {
 }
 
 type TextInput = { description?: string | undefined; memo?: string | undefined; payee?: string | undefined };
+type PlanLinks = { useGoalMoney?: { goalId: string; amount_minor?: number | undefined } | undefined; linkOccurrenceId?: string | undefined };
 
 /** The descriptive fields, creating the payee if the name is new (BR-05.6). */
 async function textOf(db: Db, context: RequestContext, input: TextInput): Promise<TransactionText & { payeeName: string | null }> {
@@ -329,11 +337,11 @@ export function audit(db: Db, context: RequestContext, type: string, transaction
   return recordAuditEvent(db, { workspaceId: context.workspaceId, userId: context.userId, type, objectType: 'transaction', objectId: transactionId });
 }
 
-async function record(db: Db, context: RequestContext, tx: Transaction, chart: Chart, input: TextInput) {
+async function record(db: Db, context: RequestContext, tx: Transaction, chart: Chart, input: TextInput & PlanLinks, origin: 'manual' | 'occurrence' = 'manual') {
   await checkAgainstLedger(db, context, tx, chart);
   const text = await textOf(db, context, input);
   const { versionId } = await insertTransaction(db, context.workspaceId, tx, {
-    origin: 'manual',
+    origin,
     userId: context.userId,
     ...(text.description ? { description: text.description } : {}),
     ...(text.memo ? { memo: text.memo } : {}),
@@ -341,7 +349,9 @@ async function record(db: Db, context: RequestContext, tx: Transaction, chart: C
   });
   await learnFrom(db, context, tx, chart, text.payeeId);
   await audit(db, context, 'transaction.created', tx.id);
-  return withUndo(transactionDto({ tx, origin: 'manual', version: 1, trashedAt: null, ...text }), versionId);
+  const plan = await applyPlanLinks(db, context, tx, chart, input, text);
+  await evaluateBudgetAlerts(db, context, new Ledger(chart, await loadTransactions(db, context.workspaceId)), tx.date.slice(0, 7));
+  return { ...withUndo(transactionDto({ tx, origin, version: 1, trashedAt: null, ...text }), versionId), ...plan };
 }
 
 /** The size of a refund or its original: its category lines, whatever their direction. */
@@ -359,16 +369,39 @@ async function checkRefundSize(db: Db, context: RequestContext, tx: Transaction,
   }
 }
 
-export async function recordTransaction(db: Db, context: RequestContext, input: TransactionInput) {
+/**
+ * What goes with saving an entry: "use goal money" (G-P4, atomic with the expense, AC-09.8), a
+ * link to a planned item, and, if there's no link, the planned items it might be (BR-08.10).
+ */
+async function applyPlanLinks(db: Db, context: RequestContext, tx: Transaction, chart: Chart, input: PlanLinks, text: TransactionText & { payeeName: string | null }) {
+  const paid = tx.postings.find((posting) => posting.amount < 0 && chart.find(posting.ledgerAccountId)?.account);
+  let released = 0;
+  if (input.useGoalMoney) {
+    const available = (await loadAllocations(db, context.workspaceId)).filter((allocation) => allocation.goalId === input.useGoalMoney!.goalId).reduce((sum, allocation) => sum + allocation.amount, 0);
+    const spent = paid ? Math.abs(paid.amount) : 0;
+    const wanted = input.useGoalMoney.amount_minor ?? Math.min(spent, available);
+    if (wanted > available) throw new ApiError(409, 'ALLOCATION_EXCEEDS_UNALLOCATED', 'That is more than this goal holds', { available_minor: available });
+    if (wanted > 0) released = await releaseGoalMoney(db, context, { goalId: input.useGoalMoney.goalId, amount: wanted, paidFromAccountId: paid?.ledgerAccountId ?? null, transactionId: tx.id });
+  }
+  if (input.linkOccurrenceId) {
+    if (!(await completeOccurrence(db, context.workspaceId, input.linkOccurrenceId, tx.id))) throw new ApiError(409, 'ALREADY_LINKED', 'This planned item is already linked or closed');
+    return { released_minor: released, suggestions: [] };
+  }
+  const workspace = await getWorkspace(db, context.workspaceId);
+  await ensureOccurrences(db, context.workspaceId, todayIn(workspace.timezone));
+  return { released_minor: released, suggestions: matchSuggestions(tx, chart, await loadPlannedItems(db, context.workspaceId), { payeeName: text.payeeName, description: text.description }) };
+}
+
+export async function recordTransaction(db: Db, context: RequestContext, input: TransactionInput, origin: 'manual' | 'occurrence' = 'manual') {
   const chart = await loadChart(db, context.workspaceId);
   const tx = buildFromIntention(chart, uuidv7(), input);
   await checkRefundSize(db, context, tx, chart, input);
-  return record(db, context, tx, chart, input);
+  return record(db, context, tx, chart, input, origin);
 }
 
-export async function recordTransfer(db: Db, context: RequestContext, input: TransferInput) {
+export async function recordTransfer(db: Db, context: RequestContext, input: TransferInput, origin: 'manual' | 'occurrence' = 'manual') {
   const chart = await loadChart(db, context.workspaceId);
-  return record(db, context, buildTransfer(uuidv7(), input), chart, input);
+  return record(db, context, buildTransfer(uuidv7(), input), chart, input, origin);
 }
 
 /**
@@ -465,6 +498,7 @@ export async function editTransaction(db: Db, context: RequestContext, id: strin
     throw new ApiError(422, 'NOT_EDITABLE', 'Opening balances and adjustments are changed from the account, not edited here');
   }
   const chart = await loadChart(db, context.workspaceId);
+  if (input.useGoalMoney || input.linkOccurrenceId) throw new ApiError(422, 'VALIDATION_FAILED', 'Goal money and plan links are set when an entry is created, or from the plan');
   const tx = buildFromIntention(chart, id, input);
   await checkRefundSize(db, context, tx, chart, input);
   await checkAgainstLedger(db, context, tx, chart);
@@ -472,6 +506,7 @@ export async function editTransaction(db: Db, context: RequestContext, id: strin
   const result = await replaceTransaction(db, context.workspaceId, tx, { ...text, expectedVersion, userId: context.userId });
   await learnFrom(db, context, tx, chart, text.payeeId);
   await audit(db, context, 'transaction.edited', id);
+  await evaluateBudgetAlerts(db, context, new Ledger(chart, await loadTransactions(db, context.workspaceId)), tx.date.slice(0, 7));
   return withUndo(transactionDto({ ...existing, ...text, tx, version: result.version }), result.versionId);
 }
 
@@ -514,9 +549,13 @@ export async function changeStatus(
     userId: context.userId,
   });
   await audit(db, context, transition.event, id);
+  // GAP-1, GT-44: a void or trash returns a linked occurrence to Planned; a restore links it again if it still can.
+  let occurrenceTaken = false;
+  if (transition.to === 'posted') occurrenceTaken = !(await relinkOccurrence(db, context.workspaceId, id));
+  else await reopenLinkedOccurrence(db, context.workspaceId, id);
   const tx = { ...existing.tx, status: transition.to };
   const trashedAt = transition.to === 'trashed' ? new Date().toISOString() : null;
-  return withUndo(transactionDto({ ...existing, tx, version: result.version, trashedAt }), result.versionId);
+  return { ...withUndo(transactionDto({ ...existing, tx, version: result.version, trashedAt }), result.versionId), occurrenceTaken };
 }
 
 /**
@@ -555,6 +594,11 @@ export async function undo(db: Db, context: RequestContext, token: string) {
     updated = { ...existing, tx: { ...existing.tx, status: to }, trashedAt: to === 'trashed' ? new Date().toISOString() : null };
   } else {
     throw new ApiError(409, 'UNDO_EXPIRED', 'This change cannot be undone');
+  }
+  if (entry.changeType === 'create' || entry.changeType === 'void' || entry.changeType === 'trash' || entry.changeType === 'restore') {
+    const to = entry.changeType === 'create' ? 'trashed' : (entry.before as { status: Transaction['status'] }).status;
+    if (to === 'posted') await relinkOccurrence(db, context.workspaceId, existing.tx.id);
+    else await reopenLinkedOccurrence(db, context.workspaceId, existing.tx.id);
   }
   await audit(db, context, 'transaction.undone', existing.tx.id);
   // Read again: an undone edit can bring back another payee, whose name isn't in the snapshot.
@@ -617,8 +661,9 @@ export async function summary(db: Db, context: RequestContext, at?: string) {
   const today = todayIn(workspace.timezone);
   const date = at ?? today;
   if (date > today) throw new ApiError(422, 'VALIDATION_FAILED', 'The summary date cannot be in the future');
-  const ledger = new Ledger(await loadChart(db, context.workspaceId), await loadTransactions(db, context.workspaceId));
-  const sts = safeToSpend({ ledger, today: date, protectedReserve: workspace.protectedReserveMinor });
+  const chart = await loadChart(db, context.workspaceId);
+  const records = await loadTransactionRecords(db, context.workspaceId);
+  const ledger = new Ledger(chart, records.map((record) => record.tx));
   // AC-05.3: the Uncategorized total is shown whenever it isn't zero.
   const month = date.slice(0, 7);
   const uncategorized = [];
@@ -635,13 +680,6 @@ export async function summary(db: Db, context: RequestContext, at?: string) {
     liabilities_minor: ledger.liabilities(date),
     netWorth_minor: ledger.netWorth(date),
     uncategorized,
-    safeToSpend: {
-      value_minor: sts.value,
-      eligibleFunds_minor: sts.elf,
-      cardReserve_minor: sts.cardReserve,
-      protectedReserve_minor: sts.protectedReserve,
-      /** Planned items and goals arrive in Stage 5; until then they're not part of this figure. */
-      scope: 'stage-3-subset',
-    },
+    safeToSpend: await safeToSpendFigures(db, context, ledger, workspace, date, records),
   };
 }

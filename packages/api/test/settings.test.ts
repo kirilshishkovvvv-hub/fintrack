@@ -61,10 +61,10 @@ describe('editing an account (BR-03.1, BR-03.6, BR-03.7)', () => {
   });
 
   test('an account dedicated to a goal cannot become spendable (BR-03.7)', async () => {
-    const { account, patch } = await setUp();
+    const { client, account, patch } = await setUp();
     const id = await account('Saved', 'savings');
-    // The goal itself arrives in Stage 5; the foreign key isn't enforced by this column yet.
-    await harness.database.pool.query('UPDATE fin.accounts SET dedicated_goal_id = gen_random_uuid() WHERE ledger_account_id = $1', [id]);
+    const created = await client.call('POST', '/api/v1/goals', { key: key(), body: { name: 'House', funding: 'dedicated', accountIds: [id] } });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
     expect((await patch(id, { spendable: true })).status).toBe(422);
   });
 

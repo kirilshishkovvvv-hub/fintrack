@@ -30,6 +30,9 @@ import * as catalog from './catalog.ts';
 import * as reconciliation from './reconciliation.ts';
 import * as schemas from './schemas.ts';
 import * as services from './services.ts';
+import * as budgets from './budgets.ts';
+import * as goals from './goals.ts';
+import * as planning from './planning.ts';
 import * as settings from './settings.ts';
 
 export interface AppDependencies {
@@ -56,7 +59,7 @@ interface Call {
 type Handler = (call: Call) => Promise<Response>;
 
 interface Route {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   pattern: RegExp;
   handler: Handler;
 }
@@ -185,6 +188,147 @@ export function createApp(deps: AppDependencies) {
           true,
         );
         return json(result.status, result.body, result.replayed ? { 'idempotent-replayed': 'true' } : {});
+      },
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/safe-to-spend$/,
+      handler: async (call) => json(200, await inWorkspace(call.userId, planning.getSafeToSpend)),
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/projection$/,
+      handler: async (call) => {
+        const { days } = schemas.projectionQuery.parse(Object.fromEntries(call.url.searchParams));
+        return json(200, await inWorkspace(call.userId, (db, context) => planning.getProjection(db, context, days)));
+      },
+    },
+    { method: 'GET', pattern: /^\/api\/v1\/rules$/, handler: async (call) => json(200, { items: await inWorkspace(call.userId, planning.getRules) }) },
+    { method: 'POST', pattern: /^\/api\/v1\/rules$/, handler: idempotentWrite(schemas.createRuleBody, planning.createRule) },
+    {
+      method: 'PATCH',
+      pattern: new RegExp(`^/api/v1/rules/${UUID}$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.updateRuleBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => planning.changeRule(db, context, call.params.id!, version, input), true));
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/rules/${UUID}/end$`),
+      handler: idempotentWrite(schemas.endRuleBody, (db, context, input, call) => planning.finishRule(db, context, call.params.id!, input), ACTION),
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/occurrences$/,
+      handler: async (call) => {
+        const query = schemas.occurrencesQuery.parse(Object.fromEntries(call.url.searchParams));
+        return json(200, { items: await inWorkspace(call.userId, (db, context) => planning.getOccurrences(db, context, query)) });
+      },
+    },
+    {
+      method: 'PATCH',
+      pattern: new RegExp(`^/api/v1/occurrences/${UUID}$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.editOccurrenceBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => planning.changeOccurrence(db, context, call.params.id!, version, input), true));
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/occurrences/${UUID}/confirm$`),
+      handler: idempotentWrite(schemas.confirmOccurrenceBody, (db, context, input, call) => planning.confirmOccurrence(db, context, call.params.id!, input), ACTION),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/occurrences/${UUID}/link$`),
+      handler: idempotentWrite(schemas.linkOccurrenceBody, (db, context, input, call) => planning.linkOccurrence(db, context, call.params.id!, input), { status: 200 }),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/occurrences/${UUID}/unlink$`),
+      handler: idempotentWrite(schemas.emptyBody, (db, context, _input, call) => planning.unlinkOccurrence(db, context, call.params.id!), ACTION),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/occurrences/${UUID}/skip$`),
+      handler: idempotentWrite(schemas.emptyBody, (db, context, _input, call) => planning.skipOccurrence(db, context, call.params.id!), ACTION),
+    },
+    { method: 'GET', pattern: /^\/api\/v1\/goals$/, handler: async (call) => json(200, { items: await inWorkspace(call.userId, goals.getGoals) }) },
+    { method: 'POST', pattern: /^\/api\/v1\/goals$/, handler: idempotentWrite(schemas.createGoalBody, goals.createGoal) },
+    {
+      method: 'PATCH',
+      pattern: new RegExp(`^/api/v1/goals/${UUID}$`),
+      handler: async (call) => {
+        const version = requiredVersion(call.request);
+        const input = schemas.updateGoalBody.parse(await readJson(call.request));
+        return json(200, await inWorkspace(call.userId, (db, context) => goals.changeGoal(db, context, call.params.id!, version, input), true));
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/goals/${UUID}/archive$`),
+      handler: idempotentWrite(schemas.emptyBody, (db, context, _input, call) => goals.archiveGoal(db, context, call.params.id!), ACTION),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/goals/${UUID}/allocations$`),
+      handler: idempotentWrite(schemas.allocationBody, (db, context, input, call) => goals.allocate(db, context, call.params.id!, input), { status: 200 }),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/goals/${UUID}/link-payment$`),
+      handler: idempotentWrite(schemas.linkPaymentBody, (db, context, input, call) => goals.linkPayment(db, context, call.params.id!, input), { status: 200 }),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/goals/${UUID}/accounts$`),
+      handler: idempotentWrite(schemas.goalAccountBody, (db, context, input, call) => goals.linkAccount(db, context, call.params.id!, input), { status: 200 }),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/goals/${UUID}/unlink$`),
+      handler: idempotentWrite(schemas.goalUnlinkBody, (db, context, input, call) => goals.unlinkAccount(db, context, call.params.id!, input), { status: 200 }),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/api/v1/goals/${UUID}/convert$`),
+      handler: idempotentWrite(schemas.goalConvertBody, (db, context, input, call) => goals.convertGoal(db, context, call.params.id!, input), { status: 200 }),
+    },
+    {
+      method: 'GET',
+      pattern: new RegExp(`^/api/v1/goals/${UUID}/history$`),
+      handler: async (call) => json(200, { items: await inWorkspace(call.userId, (db, context) => goals.goalHistory(db, context, call.params.id!)) }),
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/budgets$/,
+      handler: async (call) => {
+        const { month } = schemas.budgetsQuery.parse(Object.fromEntries(call.url.searchParams));
+        // Reading fires any threshold just crossed, so it takes the write lock.
+        return json(200, await inWorkspace(call.userId, (db, context) => budgets.getBudgets(db, context, month), true));
+      },
+    },
+    {
+      method: 'PUT',
+      pattern: new RegExp(`^/api/v1/budgets/(${UUID.slice(1, -1)}|overall)/(\\d{4}-\\d{2})$`),
+      handler: idempotentWrite(
+        schemas.budgetBody,
+        (db, context, input, call) => {
+          const [, key, month] = call.url.pathname.match(/\/budgets\/([^/]+)\/([^/]+)$/)!;
+          return budgets.setBudget(db, context, key === 'overall' ? null : key!, schemas.budgetMonth.parse(month), input);
+        },
+        { status: 200 },
+      ),
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/debts$/,
+      handler: async (call) => {
+        const period = schemas.debtsQuery.parse(Object.fromEntries(call.url.searchParams));
+        return json(200, await inWorkspace(call.userId, (db, context) => budgets.getDebts(db, context, period)));
       },
     },
     { method: 'GET', pattern: /^\/api\/v1\/payees$/, handler: async (call) => json(200, { items: await inWorkspace(call.userId, catalog.getPayees) }) },
@@ -361,8 +505,8 @@ export function createApp(deps: AppDependencies) {
     },
     { method: 'POST', pattern: new RegExp(`^/api/v1/transactions/${UUID}/void$`), handler: statusAction('void') },
     { method: 'POST', pattern: new RegExp(`^/api/v1/transactions/${UUID}/restore$`), handler: statusAction('restore') },
-    { method: 'POST', pattern: /^\/api\/v1\/transactions$/, handler: idempotentWrite(schemas.createTransactionBody, services.recordTransaction) },
-    { method: 'POST', pattern: /^\/api\/v1\/transfers$/, handler: idempotentWrite(schemas.createTransferBody, services.recordTransfer) },
+    { method: 'POST', pattern: /^\/api\/v1\/transactions$/, handler: idempotentWrite(schemas.createTransactionBody, (db, context, input) => services.recordTransaction(db, context, input)) },
+    { method: 'POST', pattern: /^\/api\/v1\/transfers$/, handler: idempotentWrite(schemas.createTransferBody, (db, context, input) => services.recordTransfer(db, context, input)) },
     {
       method: 'POST',
       pattern: new RegExp(`^/api/v1/undo/${UUID}$`),
@@ -555,6 +699,7 @@ function toResponse(error: unknown, report?: (error: unknown, reference: string)
   if (error instanceof VersionConflict) return problem(new ApiError(409, 'VERSION_CONFLICT', error.message));
   const code = (error as { code?: string } | null)?.code;
   // Raised by the database lock on reconciled transactions (migration 0005).
+  if (code === 'FTL02') return problem(new ApiError(409, 'BUDGET_BRANCH_CONFLICT', 'A category and its subcategories cannot both have a budget'));
   if (code === 'FTL01') {
     return problem(new ApiError(409, 'LOCKED_RECONCILED', 'This transaction is reconciled. Unlock its reconciliation to change it'));
   }

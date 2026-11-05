@@ -77,6 +77,10 @@ const meta = {
   memo: text(1000).optional(),
   /** A name, not an ID: a new name creates the payee (BR-05.6). */
   payee: text(100).optional(),
+  /** G-P4: this spending comes out of a goal's money, atomically (AC-09.8). */
+  useGoalMoney: z.strictObject({ goalId: id, amount_minor: positiveMinor.optional() }).optional(),
+  /** BR-08.5: this entry is that planned item. */
+  linkOccurrenceId: id.optional(),
 };
 const plainLine = z.strictObject({ categoryId: id, amount_minor: positiveMinor, memo: text(500).optional() });
 const expenseLine = plainLine.extend({ mark: z.literal('discount').optional() });
@@ -200,6 +204,8 @@ export const importDecisionsBody = z.strictObject({
         rowId: id,
         decision: z.enum(['import', 'skip', 'link', 'transfer']).optional(),
         categoryId: id.nullable().optional(),
+        /** The planned item this row is (BR-16.10). */
+        occurrenceId: id.nullable().optional(),
         counterAccountId: id.nullable().optional(),
       }),
     )
@@ -234,6 +240,124 @@ export const transactionsQuery = z
     limit: z.coerce.number().int().min(1).max(1000).default(1000),
   })
   .refine((p) => !p.from || !p.to || p.from <= p.to, 'from must not be after to');
+
+const ruleLine = z.strictObject({ ledgerAccountId: id, amount_minor: positiveMinor });
+const optionalMinor = z.number().int().min(0).max(MAX_ABS_CENTS);
+
+const ruleFields = {
+  name: text(100),
+  kind: z.enum(['expense', 'income', 'transfer', 'debt_payment']),
+  amountType: z.enum(['fixed', 'estimated']).optional(),
+  accountId: id,
+  /** Categories; the other account for a transfer; the liability, then categories, for a debt payment. */
+  lines: z.array(ruleLine).min(1).max(50),
+  frequency: z.enum(['once', 'weekly', 'every_n_weeks', 'monthly_day', 'monthly_last', 'every_n_months', 'yearly']),
+  interval: z.number().int().min(1).max(60).optional(),
+  anchorDay: z.number().int().min(1).max(31).optional(),
+  startDate: isoDate,
+  endDate: isoDate.optional(),
+  maxCount: z.number().int().min(1).max(1000).optional(),
+  nonWorkingDay: z.enum(['on_date', 'previous', 'next']).optional(),
+  isPayday: z.boolean().optional(),
+  payer: text(100).optional(),
+  expectedMin_minor: optionalMinor.optional(),
+  expectedMax_minor: optionalMinor.optional(),
+  reminderDays: z.number().int().min(0).max(60).optional(),
+  goalId: id.optional(),
+};
+
+export const createRuleBody = z.strictObject(ruleFields);
+
+export const updateRuleBody = z.strictObject({
+  name: ruleFields.name.optional(),
+  kind: ruleFields.kind.optional(),
+  amountType: ruleFields.amountType,
+  accountId: id.optional(),
+  lines: ruleFields.lines.optional(),
+  frequency: ruleFields.frequency.optional(),
+  interval: ruleFields.interval,
+  anchorDay: z.number().int().min(1).max(31).nullable().optional(),
+  startDate: isoDate.optional(),
+  endDate: isoDate.nullable().optional(),
+  maxCount: z.number().int().min(1).max(1000).nullable().optional(),
+  nonWorkingDay: ruleFields.nonWorkingDay,
+  isPayday: ruleFields.isPayday,
+  payer: text(100).nullable().optional(),
+  expectedMin_minor: optionalMinor.nullable().optional(),
+  expectedMax_minor: optionalMinor.nullable().optional(),
+  reminderDays: ruleFields.reminderDays,
+  goalId: id.nullable().optional(),
+  /** BR-08.6: the date from which the change applies. Today by default. */
+  effectiveFrom: isoDate.optional(),
+});
+
+export const endRuleBody = z.strictObject({ date: isoDate.optional() });
+
+export const occurrencesQuery = z.strictObject({
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  includeClosed: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+});
+
+export const confirmOccurrenceBody = z.strictObject({
+  date: isoDate.optional(),
+  amount_minor: positiveMinor.optional(),
+  lines: ruleFields.lines.optional(),
+  accountId: id.optional(),
+  useGoalMoney: z.boolean().optional(),
+});
+
+export const linkOccurrenceBody = z.strictObject({ transactionId: id, useGoalMoney: z.boolean().optional() });
+
+export const editOccurrenceBody = z.strictObject({ amount_minor: positiveMinor.optional(), dueDate: isoDate.optional(), goalId: id.nullable().optional() });
+
+export const createGoalBody = z.strictObject({
+  name: text(100),
+  funding: z.enum(['dedicated', 'virtual']),
+  target_minor: positiveMinor.optional(),
+  targetDate: isoDate.optional(),
+  monthly_minor: optionalMinor.optional(),
+  accountIds: z.array(id).max(20).optional(),
+});
+
+export const updateGoalBody = z.strictObject({
+  name: text(100).optional(),
+  target_minor: positiveMinor.nullable().optional(),
+  targetDate: isoDate.nullable().optional(),
+  monthly_minor: optionalMinor.nullable().optional(),
+});
+
+export const allocationBody = z
+  .strictObject({
+    operation: z.enum(['allocate', 'decrease', 'release', 'move', 'use']),
+    accountId: id,
+    amount_minor: positiveMinor.optional(),
+    toGoalId: id.optional(),
+    toAccountId: id.optional(),
+    transactionId: id.optional(),
+    reason: text(200).optional(),
+  })
+  .refine((body) => ['release', 'use'].includes(body.operation) || body.amount_minor !== undefined, 'Enter an amount');
+
+export const linkPaymentBody = z
+  .strictObject({ occurrenceId: id.optional(), ruleId: id.optional(), unlink: z.boolean().optional() })
+  .refine((body) => Boolean(body.occurrenceId) !== Boolean(body.ruleId), 'Name one planned item or one rule');
+
+export const goalAccountBody = z.strictObject({ accountId: id });
+export const goalUnlinkBody = z.strictObject({ accountId: id, spendable: z.boolean() });
+export const goalConvertBody = z.strictObject({ to: z.enum(['virtual', 'dedicated']), accountId: id.optional() });
+
+const monthText = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'must be a month in YYYY-MM form');
+export const budgetsQuery = z.strictObject({ month: monthText });
+export const budgetMonth = monthText;
+export const budgetBody = z.strictObject({
+  limit_minor: optionalMinor.nullable(),
+  thresholds: z.array(z.number().int().min(1).max(200)).min(1).max(3).optional(),
+  applyForward: z.boolean().optional(),
+});
+
+export const debtsQuery = z.strictObject({ from: isoDate, to: isoDate }).refine((p) => p.from <= p.to, 'from must not be after to');
+export const projectionQuery = z.strictObject({ days: z.enum(['30', '60', '90']).default('30').transform(Number) });
 
 export const updatePayeeBody = z.strictObject({ name: text(100).optional(), defaultCategoryId: id.nullable().optional() });
 export const mergePayeeBody = z.strictObject({ intoId: id });
