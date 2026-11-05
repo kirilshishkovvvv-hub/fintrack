@@ -3,10 +3,10 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { AppShell, LoadError } from '@/components/AppShell';
 import { api, ApiProblem, errorMessage, newIdempotencyKey } from '@/lib/api';
-import { formatMoney } from '@/lib/money';
+import { formatDay, formatMoney } from '@/lib/money';
 import { active, loadAccounts, loadCategories, notifyDataChanged, useApiData } from '@/lib/use-api';
 
 type Decision = 'import' | 'skip' | 'link' | 'transfer';
@@ -61,6 +61,7 @@ const PAGE = 50;
 export default function ImportReviewPage() {
   const { id } = useParams<{ id: string }>();
   const t = useTranslations('import');
+  const locale = useLocale();
   const tErrors = useTranslations('errors');
   const tApp = useTranslations('app');
   const router = useRouter();
@@ -205,7 +206,7 @@ export default function ImportReviewPage() {
                   <div className="row-main">
                     <div className="row-title">{row.description ?? '—'}</div>
                     <div className="small muted">
-                      {row.date ?? '—'}
+                      {row.date ? formatDay(row.date, locale) : '—'}
                       {row.rejectReason ? ` · ${t(`reasons.${row.rejectReason}`)}` : ''}
                       {!open && row.state !== 'rejected' ? ` · ${t(`states.${row.state}`)}` : ''}
                       {txId && row.classification !== 'new' ? (
@@ -225,7 +226,7 @@ export default function ImportReviewPage() {
                       <option value="">{t('notThePlan')}</option>
                       {row.planSuggestions.map((plan) => (
                         <option key={plan.occurrenceId} value={plan.occurrenceId}>
-                          {plan.name} · {plan.dueDate} · {money(plan.amount_minor)}
+                          {plan.name} · {formatDay(plan.dueDate, locale)} · {money(plan.amount_minor)}
                         </option>
                       ))}
                     </select>

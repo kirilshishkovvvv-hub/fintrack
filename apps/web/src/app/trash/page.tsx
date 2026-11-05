@@ -6,6 +6,7 @@ import { AppShell, LoadError } from '@/components/AppShell';
 import { signedMoney } from '@/components/TransactionRow';
 import { useUndo } from '@/components/UndoToast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
+import { dateLocale, formatDay } from '@/lib/money';
 import { loadAccounts, loadCategories, loadSummary, notifyDataChanged, useApiData, type Transaction } from '@/lib/use-api';
 
 /** Deleted transactions, recoverable for 30 days and then removed for good (FR-19, OD-05). */
@@ -41,7 +42,7 @@ export default function TrashPage() {
 
   const accounts = new Map((data?.accounts ?? []).map((account) => [account.id, account]));
   const categories = new Map((data?.categories ?? []).map((category) => [category.id, category]));
-  const day = (iso: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
+  const day = (iso: string) => new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: 'medium' }).format(new Date(iso));
 
   return (
     <AppShell>
@@ -65,7 +66,7 @@ export default function TrashPage() {
                 <div className="row-main">
                   <div className="row-title">{tx.description ?? category?.name ?? tKinds(tx.kind)}</div>
                   <div className="small muted">
-                    {tx.date} · {signedMoney(tx, accounts, data.currency)} · {t('removedOn', { date: day(tx.purgeAfter) })}
+                    {formatDay(tx.date, locale)} · {signedMoney(tx, accounts, data.currency)} · {t('removedOn', { date: day(tx.purgeAfter) })}
                   </div>
                 </div>
                 <button className="btn" type="button" onClick={() => void restore(tx)}>

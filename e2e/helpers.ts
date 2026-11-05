@@ -101,6 +101,8 @@ export async function expectFits(page: Page): Promise<void> {
 /** WCAG 2.1 AA basics (NFR-08, Annex L items 13 to 15), plus the width check, on the screen as it stands. */
 export async function checkScreen(page: Page, name: string): Promise<void> {
   await expectFits(page);
+  // Next.js streams the title in after the first paint. Waiting still fails a page that never gets one.
+  await expect(page).toHaveTitle(/.+/);
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   const problems = results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(' ')).slice(0, 3).join(', ')}`);
   expect(problems, `${name} (${page.url()})`).toEqual([]);

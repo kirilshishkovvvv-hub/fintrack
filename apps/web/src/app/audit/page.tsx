@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { AppShell, LoadError } from '@/components/AppShell';
 import { api } from '@/lib/api';
+import { dateLocale } from '@/lib/money';
 import { useApiData } from '@/lib/use-api';
 
 interface AuditPage {
@@ -22,7 +23,7 @@ export default function AuditPage() {
 
   const items = [...(data?.items ?? []), ...(older?.items ?? [])];
   const next = older ? older.nextBefore : data?.nextBefore;
-  const when = (iso: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  const when = (iso: string) => new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
   const label = (type: string) => {
     const key = `events.${type.replaceAll('.', '_')}`;
     return t.has(key) ? t(key) : t('other');

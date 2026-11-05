@@ -2,14 +2,13 @@
 
 **The current state only.** The dated history, with what each test proved, is in [docs/progress-log.md](docs/progress-log.md). Update this file whenever the state changes, and before context runs out.
 
-_Last verified against the code: 4 Nov 2026, see "Test results". Documents updated 5 Nov 2026._
+_Last verified against the code: 5 Nov 2026, see "Test results"._
 
 ## Handoff
 
-- **Current stage:** Stage 4 (core application) plus the import work moved forward (AP-15). **The buildable list is finished. Stage 4's exit needs only a staging deploy,** which needs a Render account: see "What still stands between Stage 4 and done".
-- **Current task:** Stage 5 (user's autonomy decision, after "Finish Stage 4 first"). Domain rules, golden tests, database and API are committed (`a33d6b8`, `db6eee6`).
-- **In progress, not committed until tested:** the screens: `/plan`, `/plan/rules`, `/budgets`, `/goals`, `/debts`, the Safe to Spend card, the goal-money prompt and the matching hint. Their browser tests are in `e2e/planning.spec.ts`.
-- **Next action:** get `e2e/planning.spec.ts` passing, run the full suite, commit. Then a clickable prototype with invented data for the Safe to Spend user test (Stage 2 §17.2), which must run before these screens are final. The user recruits the 5 people.
+- **Current stage:** Stage 5 built and tested. **It can't be called final:** the Safe to Spend user test hasn't run, and it may change wording and layout. Stage 4's exit still needs a staging deploy.
+- **Current task:** none in progress. The Stage 5 report went to the user.
+- **Next action:** Stage 6 (dashboard, core reports, projection screen), unless the user says otherwise. The user test can run alongside it: the prototype is at https://claude.ai/artifact/81oWGRLbGpwyh1GBRSATPJ, and the guide is [docs/sts-user-test.md](docs/sts-user-test.md). The prototype's source is `docs/sts-prototype.html`, and its figures are checked by the golden tests named "§7.8 Example 1".
 - **Don't:** new queries stay plain SQL until decision D-1.
 
 ## Correction to an earlier report
@@ -23,8 +22,8 @@ On 4 Nov I told the user "Stage 4 is built" and described 2FA as optional for th
 | 1 Requirements, 2 Architecture | ✅ Approved 2 Nov 2026 |
 | 3 Ledger core, login, isolation | ✅ Built, except staging (needs a Render account) |
 | 4 Core application | 🟡 Built and tested; exit needs staging only; legal text needs a lawyer |
-| 7 Import (moved forward, AP-15) | 🟡 Built, including matching to planned bills (API tested, screen in progress); real bank files untested |
-| 5 Planning, full Safe to Spend | 🟡 Rules, API and database built and tested; screens in progress; user test not run |
+| 7 Import (moved forward, AP-15) | 🟡 Built, including matching to planned bills; real bank files untested |
+| 5 Planning, full Safe to Spend | 🟡 Built and tested; user test not run, so the screens aren't final |
 | 6 Reports | ⏳ Not started |
 | 8 Hardening, 9 Launch | ⏳ Not started; each needs explicit approval |
 
@@ -32,7 +31,14 @@ On 4 Nov I told the user "Stage 4 is built" and described 2FA as optional for th
 
 | Feature | Evidence | Code |
 |---|---|---|
-| Ledger: rules, builders, metrics; Safe to Spend **subset only** | Golden and property tests | `packages/domain/src` |
+| Ledger: rules, builders, metrics | Golden and property tests | `packages/domain/src` |
+| Full Safe to Spend (§7): payday window, option (c), card reserve, AM-1, R5, every item traceable (P8) | Golden tests with the spec's numbers | `packages/domain/src/sts.ts`, `SafeToSpendCard.tsx` |
+| Recurring rules, planned items, confirm, match, skip, regenerate, matching rules M-1 to M-7 | Unit, golden, API and browser tests | `packages/domain/src/planning.ts`, `packages/api/src/planning.ts`, `apps/web/src/app/plan` |
+| Budgets: limits, carrying forward, thresholds fired once, overall limit, instalment note | Golden, API and browser tests | `packages/api/src/budgets.ts`, `apps/web/src/app/budgets` |
+| Goals: virtual and dedicated, shortfalls, backed amounts, use goal money, conversions, Save for a bill | Golden, API and browser tests | `packages/domain/src/goals.ts`, `packages/api/src/goals.ts`, `apps/web/src/app/goals` |
+| Debt overview; loan details | API and browser tests | `getDebts` in `budgets.ts`, `apps/web/src/app/debts` |
+| Import rows matched to planned items (GT-37, GT-38) | API and browser tests | `packages/api/src/imports.ts` |
+| Projection (a Should) | Unit and API tests; **no screen yet** (Stage 6) | `packages/domain/src/projection.ts` |
 | Database guarantees: balancing, isolation, append-only history, locks | 26 attack tests | `packages/db/migrations`, `packages/db/test/integrity.test.ts` |
 | Sign-up with consents, verification, sign-in, sign-out, sessions, login slowdown | API tests; browser journeys | `packages/api/src/auth.ts`, `login-throttle.ts` |
 | Passkeys, with the user check enforced | Browser tests on a virtual device; mutation-tested | `auth.ts`, `e2e/passkeys.spec.ts` |
@@ -58,12 +64,12 @@ On 4 Nov I told the user "Stage 4 is built" and described 2FA as optional for th
 
 | Check | Result | When |
 |---|---|---|
-| `npm test` | 283 passed, 10 todo, 0 failed, 18 files | 4 Nov 2026 |
-| `npm run typecheck` | Clean | 4 Nov 2026 |
-| `npm run e2e` | 46 passed in the last full run; 2 added after it (the Uncategorized notice) passed on their own. **One failure seen once, not explained:** see "Known issues" | 4 Nov 2026 |
-| `next build` | Succeeded, with dummy settings | 4 Nov 2026 |
+| `npm test` | 446 passed, 8 todo, 0 failed, 21 files | 5 Nov 2026 |
+| `npm run typecheck` | Clean | 5 Nov 2026 |
+| `npm run e2e` | 72 tests. Last full run: 70 passed; 2 failed (one new test at both widths) because its expectation was wrong. After correcting that test, `e2e/planning.spec.ts` passed 24 of 24. Only that test file changed after the full run | 5 Nov 2026 |
+| `next build` | Compiled, with dummy settings | 5 Nov 2026 |
 
-**Golden tests, 71 in total.** With an automated test: GT-01 to 09, 11 to 15, 17 to 19, 21 to 27, 35, 36, 38 (ledger part), 39, 40 to 45, 59 (search included), 70, 71. **Not yet:** GT-10, 16, 20, 28 to 34, 37, 46 to 58, 60 to 69. Only some of these appear as "todo" in the test run, although `packages/golden/src/index.ts` says the list is complete.
+**Golden tests, 71 in total.** Everything Stage 5 needs has an automated test, in the golden runners, the API tests or the domain tests. **Not yet, and listed as "todo":** GT-10 (Should), GT-46 and 47 (investments, Should), GT-60 (Stage 6). GT-58's last point, a CSV with both a transaction and a booking date, relies on the import mapping tests.
 
 **Never tested:** real bank files; real phones, Windows Hello or fingerprint readers; opening an encrypted export in 7-Zip, Windows Explorer or macOS; a manual screen-reader pass; the production email path; load at 50,000 transactions.
 
@@ -76,14 +82,26 @@ Checked against Stage 1 §12.2 and §13, and Stage 2 §9.2, on 4 Nov 2026.
 | Export round trip (AC-17.4) | Not built. A Should, no longer an exit criterion (D-2, 5 Nov) | Later |
 | Staging deploy (Stage 3 exit) | Not done | **Render account** |
 | Legal texts, business details (Annex L) | Draft shells only | **Lawyer; the user's details** |
-| "Schedule instead" offer on a future date (AC-04.4) | Date is refused, with a hint; nothing to schedule until Stage 5 | Stage 5 |
 | Tag filter (BR-04.5) | Tags are a Should and aren't built | Later |
 | Import rules for payees (BR-05.6); delete an unused category (BR-05.4); account type conflict | Not built, or built one way | **D-11, D-12, D-10** |
 | `PATCH /me`, unsubscribe route, `email_preferences` | Not built: one language, no name, no marketing email yet (T-64) | When those arrive |
 
+## What still stands between Stage 5 and done
+
+Checked against Stage 1 §12.2, §13 and Stage 2 §9.2, §17 on 5 Nov 2026.
+
+| Item | State | Needs |
+|---|---|---|
+| Safe to Spend user test (Stage 2 §17.2) | Prototype and guide ready; not run | **The user: 5 people** |
+| Reminders and in-app notifications (FR-20, a Should) | Thresholds are recorded and shown on the budget; nothing notifies, so reminder days have no screen | Later |
+| Calendar grid, monthly plan, suggesting a payday, auto-link (Shoulds) | Not built | Later |
+| "Track as an asset" (BR-10.10) | The option appears, and points to adding an asset account. The purchase isn't converted for the user | Fine unless the user test says otherwise |
+| Onboarding prompts for rent and bills (§7.11) | Only the payday prompt exists, on the dashboard (T-76) | Stage 6 with the dashboard |
+
 ## Known issues and limits
 
-- **One unexplained test failure.** The phone sign-up journey (`e2e/journeys.spec.ts:7`) failed once in a full run, with a list that should have been empty holding one item. That matches the accessibility check or the new missing-translation guard; the output didn't show which. It then passed 5 times alone and once in the next full run. Print the full failure if it returns.
+- **Occurrences are generated on read** (T-72), and the worker doesn't exist. Harmless, but a user who never opens the app has no new occurrences until they do.
+- **Reads got heavier.** Budgets, goals and Safe to Spend load every transaction per request, like everything else, and NFR-03 still isn't measured (T-16).
 - **Purges aren't scheduled.** Trash and deletion purges are tested functions with no worker to run them, so the on-screen promises wouldn't be kept in production (Stage 8 at the latest).
 - **Drizzle isn't used**, though AD-09 approved it: see "Pending decisions".
 - **Production can't send email** yet: it throws until Scaleway is configured (`apps/web/src/server/app.ts`).
@@ -109,6 +127,6 @@ Checked against Stage 1 §12.2 and §13, and Stage 2 §9.2, on 4 Nov 2026.
 
 ## Next steps, in priority order
 
-1. Get the decisions above.
-2. Stage 5: budgets, recurring rules, matching, goals, cards and debts, calendar, full Safe to Spend.
-3. Before the Stage 5 UI is finalized: a clickable prototype with invented data, then the Safe to Spend user test with 5 people (Stage 2 §17.2). The user recruits them.
+1. Stage 6: dashboard widgets and period selector, core reports, projection screen, GT-60, the performance target.
+2. The Safe to Spend user test, whenever the user has the people.
+3. Get the decisions above.

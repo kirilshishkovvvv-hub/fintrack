@@ -64,7 +64,7 @@ export interface SafeToSpendBreakdown {
   dueOnPayday: PlannedItem[];
   /** Information only: payday income that hasn't arrived (§7.7). */
   latePayday: PlannedItem[];
-  /** Information only: income expected inside the window, never added (P6). */
+  /** Information only: income expected inside the window, or on the payday that ends it. Never added (P6). */
   expectedIncome: PlannedItem[];
 }
 
@@ -184,6 +184,6 @@ export function safeToSpend(input: SafeToSpendInput): SafeToSpendBreakdown {
     perDay: value > 0 ? cents(Math.floor(value / window.days)) : null,
     dueOnPayday,
     latePayday: planned.filter((item) => item.isPayday && item.dueDate < today),
-    expectedIncome: planned.filter((item) => item.kind === 'income' && item.dueDate >= window.from && item.dueDate <= window.to),
+    expectedIncome: planned.filter((item) => item.kind === 'income' && item.dueDate >= window.from && (item.dueDate <= window.to || item.dueDate === window.payday)),
   };
 }

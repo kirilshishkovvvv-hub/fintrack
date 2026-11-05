@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { AppShell, LoadError } from '@/components/AppShell';
 import { ConfirmIdentity } from '@/components/ConfirmIdentity';
 import { ApiProblem } from '@/lib/api';
+import { dateLocale } from '@/lib/money';
 import { addPasskey, cancelledByUser, listPasskeys, passkeysSupported, removePasskey } from '@/lib/passkeys';
 import { useApiData } from '@/lib/use-api';
 
@@ -22,7 +23,7 @@ export default function PasskeysPage() {
   useEffect(() => setSupported(passkeysSupported()), []);
   if (failed) return <LoadError retry={reload} />;
 
-  const day = (iso: string | null) => (iso ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso)) : '');
+  const day = (iso: string | null) => (iso ? new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: 'medium' }).format(new Date(iso)) : '');
 
   async function run(work: () => Promise<void>, done: string) {
     setBusy(true);

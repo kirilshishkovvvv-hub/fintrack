@@ -530,6 +530,11 @@ export function TransactionForm({
         <label htmlFor="date">{t('date')}</label>
         <input id="date" type="date" value={values.date} max={todayLocal()} required onChange={(event) => set({ date: event.target.value })} />
       </div>
+      {isNew && values.date > todayLocal() && (
+        <p className="notice notice-info small">
+          {t('futureDate')} <Link href="/plan/rules/new">{t('scheduleInstead')}</Link>
+        </p>
+      )}
       {goalShort > 0 && (
         <label className="check">
           <input type="checkbox" checked={moveGoalMoney} onChange={(event) => setMoveGoalMoney(event.target.checked)} /> <span>{t('moveGoalMoney', { amount: formatMoney(goalShort, currency) })}</span>

@@ -2,10 +2,10 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { AppShell, LoadError } from '@/components/AppShell';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
-import { formatMoney, parseUserAmount } from '@/lib/money';
+import { formatMoney, parseUserAmount, formatDay } from '@/lib/money';
 import { active, loadAccounts, loadCategories, loadSummary, notifyDataChanged, todayLocal, useApiData, type Transaction } from '@/lib/use-api';
 
 interface Preview {
@@ -23,6 +23,7 @@ interface Preview {
 export default function ReconcilePage() {
   const { id } = useParams<{ id: string }>();
   const t = useTranslations('reconcile');
+  const locale = useLocale();
   const tKinds = useTranslations('transactions.kinds');
   const tApp = useTranslations('app');
   const tErrors = useTranslations('errors');
@@ -165,7 +166,7 @@ export default function ReconcilePage() {
                       {item.description ?? tKinds(item.kind)}
                     </span>
                     <span className="small muted">
-                      {item.date}
+                      {formatDay(item.date, locale)}
                       {item.automatic ? ` · ${t('alwaysCleared')}` : ''}
                     </span>
                   </span>

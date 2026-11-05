@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { AppShell, LoadError } from '@/components/AppShell';
 import { ConfirmIdentity } from '@/components/ConfirmIdentity';
 import { api, ApiProblem, newIdempotencyKey } from '@/lib/api';
+import { dateLocale } from '@/lib/money';
 import { useApiData } from '@/lib/use-api';
 
 interface WorkspaceStatus {
@@ -32,7 +33,7 @@ export default function DeleteAccountPage() {
   const { data, failed, reload } = useApiData(() => api<WorkspaceStatus>('GET', '/api/v1/workspace'));
   if (failed) return <LoadError retry={reload} />;
 
-  const day = (iso: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(new Date(iso));
+  const day = (iso: string) => new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: 'long' }).format(new Date(iso));
 
   async function act(path: string, done: (result: WorkspaceStatus) => void) {
     setBusy(true);

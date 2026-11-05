@@ -138,6 +138,11 @@ export async function safeToSpendFigures(db: Db, context: RequestContext, ledger
     expectedIncome: sts.expectedIncome.map(plannedDto),
     possibleDoubleCounts: doubles.map((double) => ({ ...plannedDto(double.item), transactionId: double.transactionId })),
     availableCredit_minor: availableCredit,
+    excludedAccounts: ledger.chart
+      .all()
+      .filter((account) => account.kind === 'asset' && account.account && !account.archived && !sts.elfItems.some((item) => item.accountId === account.id))
+      .map((account) => ({ accountId: account.id, name: account.name, amount_minor: ledger.balance(account.id, today) }))
+      .filter((account) => account.amount_minor !== 0),
     lastImportAt: lastImport,
   };
 }

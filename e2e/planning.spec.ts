@@ -67,6 +67,10 @@ test('a payday rule sets the window; income is never added', async ({ page }) =>
   await expect(page.getByText(/Due on payday: Rent on payday/)).toBeVisible();
   await expect(hero(page)).toHaveText('€1,000.00');
   await expect(page.getByText('Bills and card debt').first()).toBeVisible();
+  // §7.10: what the figure leaves out is named, and the salary is never added.
+  await page.getByText("How it's calculated").click();
+  await expect(page.getByText('Not included in this figure:')).toBeVisible();
+  await expect(page.getByText(/Expected income: Salary/)).toBeVisible();
   await checkScreen(page, 'dashboard with the payday line');
 });
 
@@ -266,4 +270,47 @@ test('settings: the savings-transfer choice; a loan keeps its details; budgets t
   await page.getByLabel('Overall monthly limit (optional)').fill('50');
   await page.getByRole('button', { name: 'Save overall limit' }).click();
   await expect(page.getByText(/add up to more than your overall limit/)).toBeVisible();
+});
+
+test('an import row can be accepted as the planned bill; the plan is then done, and the money counted once', async ({ page }) => {
+  await signedInUser(page, { account: { name: 'Current', opening: 100000 } });
+  await addBill(page, 'Rent', '600', today());
+  const request = page.context().request;
+  const accounts = (await (await request.get('/api/v1/accounts')).json()).items;
+  const created = await request.post('/api/v1/imports', {
+    headers: { origin: 'http://localhost:3100', 'idempotency-key': `e2e-${crypto.randomUUID()}` },
+    multipart: {
+      file: { name: 'a.csv', mimeType: 'text/csv', buffer: Buffer.from(`Date,Amount,Text\n${today()},-600.00,RENT MARCH\n`) },
+      accountId: accounts[0].id,
+      settings: JSON.stringify({ encoding: 'utf-8', delimiter: ',', decimalSeparator: '.', dateFormat: 'YYYY-MM-DD', headerRow: 0, mapping: { date: 0, amount: 1, description: 2 } }),
+    },
+  });
+  expect(created.status()).toBe(201);
+  await page.goto(`/import/${(await created.json()).id}`);
+  const choice = page.getByLabel('This may be a planned item');
+  await expect(choice).toBeVisible();
+  await checkScreen(page, 'import review with a planned item');
+  await choice.selectOption({ index: 1 });
+  await expect(choice).not.toHaveValue('');
+  await page.getByRole('checkbox').first().check().catch(() => undefined);
+  await page.getByRole('button', { name: 'Confirm import' }).click();
+  await expect(page.getByRole('button', { name: 'Confirm import' })).toHaveCount(0);
+  await page.goto('/dashboard');
+  await expect(hero(page)).toHaveText('€400.00');
+  await page.goto('/plan');
+  await expect(page.getByRole('button', { name: 'Confirm Rent' })).toHaveCount(0);
+});
+
+test('AC-04.4: a future date is refused, and planning it is offered instead', async ({ page }) => {
+  await signedInUser(page, { account: { name: 'Current', opening: 100000 } });
+  await page.goto('/transactions/new');
+  await page.getByLabel('Amount').fill('50');
+  await page.getByLabel('Category').selectOption({ label: 'Household' });
+  await page.getByLabel('Date').fill(inDays(3));
+  await expect(page.getByText("This hasn't happened yet")).toBeVisible();
+  // The date field's own limit stops the save here; the API tests cover the server's refusal.
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page).toHaveURL(/\/transactions\/new/);
+  await page.getByRole('link', { name: 'Plan it instead' }).click();
+  await expect(page).toHaveURL(/\/plan\/rules\/new/);
 });

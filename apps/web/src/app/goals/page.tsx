@@ -249,6 +249,10 @@ export default function GoalsPage() {
                 {t('addAccount')}
               </button>
             )}
+          </div>
+        )}
+        {live && (
+          <div className="actions compact">
             <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('editNamed', { name: goal.name })} onClick={() => setActing({ goalId: goal.id, action: 'edit' })}>
               {t('edit')}
             </button>

@@ -34,9 +34,12 @@ export function parseUserAmount(input: string): number | null {
   }
 }
 
+/** The product's English is European: "11 Nov 2026", never the US order (§10.3). */
+export const dateLocale = (locale: string) => (locale === 'en' ? 'en-GB' : locale);
+
 /** A calendar date in the user's format. It has no time, so no time zone may shift it (A-2). */
 export function formatDay(iso: string, locale = 'en-GB'): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${iso}T00:00:00Z`));
+  return new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${iso}T00:00:00Z`));
 }
 
 export function formatMoney(minor: number, currency: string, locale = 'en-GB'): string {

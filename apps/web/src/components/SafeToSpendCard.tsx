@@ -19,6 +19,7 @@ export function SafeToSpendCard({ sts, currency }: { sts: SafeToSpend; currency:
   const [error, setError] = useState<string | null>(null);
   const money = (minor: number) => formatMoney(Math.abs(minor), currency, locale);
   const signed = (minor: number) => `${minor < 0 ? '−' : ''}${money(minor)}`;
+  const taken = (minor: number) => `${minor > 0 ? '−' : ''}${money(minor)}`;
   const day = (iso: string) => formatDay(iso, locale);
   const negative = sts.value_minor < 0;
   const contributors = [
@@ -92,9 +93,9 @@ export function SafeToSpendCard({ sts, currency }: { sts: SafeToSpend; currency:
       ))}
       <div>
         {term(t('available'), signed(sts.eligibleFunds_minor), [])}
-        {term(t('commitments'), `−${money(sts.uco_minor)}`, [])}
-        {term(t('protectedReserve'), `−${money(sts.protectedReserve_minor)}`, [])}
-        {term(t('goalMoney'), `−${money(sts.uga_minor)}`, [])}
+        {term(t('commitments'), taken(sts.uco_minor), [])}
+        {term(t('protectedReserve'), taken(sts.protectedReserve_minor), [])}
+        {term(t('goalMoney'), taken(sts.uga_minor), [])}
         <div className="row">
           <strong>{t('safeToSpend')}</strong>
           <strong className="amount">{signed(sts.value_minor)}</strong>
@@ -109,21 +110,28 @@ export function SafeToSpendCard({ sts, currency }: { sts: SafeToSpend; currency:
         )}
         {term(
           t('commitments'),
-          `−${money(sts.uco_minor)}`,
+          taken(sts.uco_minor),
           sts.ucoItems.map((item) => ({
             name: item.type === 'card_reserve' ? t('cardReserveItem', { name: item.name }) : item.name,
-            amount: `−${money(item.amount_minor)}`,
+            amount: taken(item.amount_minor),
             note: item.type === 'overdue' ? t('overdue') : item.dueDate ? day(item.dueDate) : undefined,
           })),
         )}
         {term(
           t('goalMoney'),
-          `−${money(sts.uga_minor)}`,
-          sts.ugaItems.map((item) => ({ name: item.type === 'shortfall' ? t('shortfallOn', { name: item.name }) : item.name, amount: `−${money(item.amount_minor)}` })),
+          taken(sts.uga_minor),
+          sts.ugaItems.map((item) => ({ name: item.type === 'shortfall' ? t('shortfallOn', { name: item.name }) : item.name, amount: taken(item.amount_minor) })),
         )}
-        <p className="small muted" style={{ marginTop: '0.75rem' }}>
-          {t('notIncluded')}
-        </p>
+        {(sts.excludedAccounts.length > 0 || sts.expectedIncome.length > 0 || sts.availableCredit_minor > 0) && (
+          <p className="small muted" style={{ marginTop: '0.75rem' }}>
+            {t('notIncluded')}
+          </p>
+        )}
+        {sts.excludedAccounts.map((account) => (
+          <p className="small muted" key={account.accountId}>
+            {t('excludedAccount', { name: account.name, amount: signed(account.amount_minor) })}
+          </p>
+        ))}
         {sts.expectedIncome.map((item) => (
           <p className="small muted" key={item.occurrenceId}>
             {t('expectedIncome', { name: item.name, amount: money(item.amount_minor), date: day(item.dueDate) })}

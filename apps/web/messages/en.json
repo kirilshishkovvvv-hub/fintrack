@@ -103,7 +103,8 @@
     "lastImport": "Last bank import: {days, plural, =0 {today} one {# day ago} other {# days ago}}",
     "seePlan": "See what is planned",
     "whenPaid": "This figure looks 30 days ahead until you add your payday.",
-    "whenPaidLink": "Tell us when you get paid"
+    "whenPaidLink": "Tell us when you get paid",
+    "excludedAccount": "{name}: {amount}"
   },
   "accountTypes": {
     "current": "Current account",
@@ -184,7 +185,9 @@
     "moveGoalMoney": "Also move {amount} of goal money with it, so no goal runs short",
     "instalment": "Bought on an instalment plan (the full price still counts this month)",
     "assetOption": "Something that keeps its value? You can track it as an asset: add an Other asset account, and transfer to it instead.",
-    "assetLink": "Add the account"
+    "assetLink": "Add the account",
+    "futureDate": "This hasn't happened yet, so it can't be recorded as paid.",
+    "scheduleInstead": "Plan it instead"
   },
   "transactions": {
     "title": "Activity",
@@ -986,14 +989,15 @@
     "editedBadge": "Changed",
     "change": "Change",
     "changeNamed": "Change this {name} only",
-    "changeHint": "This changes only this one. Later changes to the repeating item leave it as it is.",
+    "changeHint": "This changes only this one.",
     "oneAmount": "Amount",
     "oneDate": "Due date",
     "oneSave": "Save this one",
     "changedOne": "{name} changed.",
     "moveOffer": "Goal money for this was on {from}. Move {amount} from {from} to {to}?",
     "moveIt": "Move it",
-    "moved": "Moved."
+    "moved": "Moved.",
+    "changeAll": "Change this one and all later ones"
   },
   "rules": {
     "title": "Repeating items",

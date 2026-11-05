@@ -125,7 +125,7 @@ export default function PlanPage() {
           {money(item.amount_minor)}
         </span>
       </div>
-      <div className="actions">
+      <div className="actions compact">
         <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('confirmNamed', { name: item.name })} onClick={() => setActing({ id: item.id, mode: 'confirm' })}>
           {t('confirm')}
         </button>
@@ -138,13 +138,12 @@ export default function PlanPage() {
         <button className="btn btn-ghost" type="button" disabled={busy} aria-label={t('changeNamed', { name: item.name })} onClick={() => setActing({ id: item.id, mode: 'edit' })}>
           {t('change')}
         </button>
-        <Link className="btn btn-ghost" href={`/plan/rules/${item.ruleId}`} aria-label={t('editNamed', { name: item.name })}>
-          {t('edit')}
-        </Link>
       </div>
       {acting?.id === item.id && acting.mode === 'edit' && (
         <form onSubmit={(event) => saveOne(event, item)}>
-          <p className="small muted">{t('changeHint')}</p>
+          <p className="small muted">
+            {t('changeHint')} <Link href={`/plan/rules/${item.ruleId}`}>{t('changeAll')}</Link>
+          </p>
           <div className="grid-2">
             <div className="field">
               <label htmlFor={`one-amount-${item.id}`}>{t('oneAmount')}</label>

@@ -27,6 +27,7 @@ export interface SafeToSpend {
   expectedIncome: PlannedLine[];
   possibleDoubleCounts: (PlannedLine & { transactionId: string })[];
   availableCredit_minor: number;
+  excludedAccounts: { accountId: string; name: string; amount_minor: number }[];
   lastImportAt: string | null;
 }
 

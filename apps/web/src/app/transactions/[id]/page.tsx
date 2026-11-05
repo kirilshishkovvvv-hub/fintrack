@@ -9,7 +9,7 @@ import { signedMoney } from '@/components/TransactionRow';
 import { TransactionForm, valuesFrom, type PayeeOption } from '@/components/TransactionForm';
 import { useUndo } from '@/components/UndoToast';
 import { api, ApiProblem, errorMessage, newIdempotencyKey } from '@/lib/api';
-import { formatMoney } from '@/lib/money';
+import { dateLocale, formatDay, formatMoney } from '@/lib/money';
 import { loadGoals } from '@/lib/plan';
 import {
   loadAccounts,
@@ -75,7 +75,7 @@ export default function TransactionDetailPage() {
   const changeable = tx.status === 'posted' && !tx.reconciled && tx.kind !== 'opening_balance';
   const ownAccountId = tx.lines.find((line) => accounts.has(line.ledgerAccountId))?.ledgerAccountId;
   const title = tx.description ?? categoryNames[0] ?? tKinds(tx.kind);
-  const when = (iso: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  const when = (iso: string) => new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
   const heldGoals =
     tx.kind === 'expense'
       ? data.goals
@@ -164,7 +164,7 @@ export default function TransactionDetailPage() {
         </div>
         <div className="row">
           <span className="muted">{t('date')}</span>
-          <span>{tx.date}</span>
+          <span>{formatDay(tx.date, locale)}</span>
         </div>
         <div className="row">
           <span className="muted">{t('accounts')}</span>
@@ -207,7 +207,7 @@ export default function TransactionDetailPage() {
       )}
       {tx.occurrence && (
         <section className="card">
-          <p>{t('paidPlan', { name: tx.occurrence.name, date: tx.occurrence.dueDate })}</p>
+          <p>{t('paidPlan', { name: tx.occurrence.name, date: formatDay(tx.occurrence.dueDate, locale) })}</p>
           <button className="btn" type="button" disabled={busy} onClick={() => void unlinkPlan(tx.occurrence!.id)}>
             {t('unlinkPlan')}
           </button>

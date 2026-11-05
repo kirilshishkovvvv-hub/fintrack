@@ -343,6 +343,10 @@ GT-09 and GT-10, plus the import parts of GT-39 and GT-71 and the export and sea
 | T-76 | **"When do you usually get paid?" (§7.6) is a prompt on the dashboard**, shown until a payday rule exists, not a step in onboarding | A rule needs an account, and onboarding has none yet. | Easy |
 | T-77 | **A goal's state (reached, used) is worked out, not stored** | It can never disagree with the money. | Easy |
 | T-78 | **Interest paid in the debt overview adds categories whose name starts with "Interest"** | There's no system key for it yet; a renamed category would drop out. To replace with a key before languages switch on. | Easy |
+| T-79 | **Added `docs/sts-prototype.html`, a static page with the app's tokens and wording.** It isn't the app: it needs no account, works by video link and saves nothing | §17.2 asks for a clickable prototype. Its figures are golden tests (§7.8 Example 1), so it can't drift unnoticed. | Easy |
+| T-80 | **The dashboard shows the five lines and the "due on payday" line outright; the items behind them are one tap away** | Wireframe 1 and §7.10 read together. I first hid all of it, against the wireframe. | Easy |
+| T-81 | **Dates in English use the British order everywhere** (`dateLocale`) | §10.3; next-intl's plain `en` gave US dates in an EU product. Seen only by looking at the screen. | Easy |
+| T-82 | **Browser accessibility checks wait for the page title** | Next.js streams it in; the check sometimes ran first. That explains the one unexplained failure from 4 Nov. A page with no title still fails. | Easy |
 
 ### Added to the plan by you
 

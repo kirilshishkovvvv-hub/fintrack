@@ -8,7 +8,7 @@ import { accountBalance } from '@/components/AccountRow';
 import { AppShell } from '@/components/AppShell';
 import { useUndo } from '@/components/UndoToast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
-import { formatMoney, parseUserAmount } from '@/lib/money';
+import { formatMoney, parseUserAmount, dateLocale } from '@/lib/money';
 import {
   active,
   loadAccounts,
@@ -69,7 +69,7 @@ export default function AccountPage() {
   const updatable = account.class === 'cash' || account.class === 'investment' || account.class === 'other_asset';
   const expenseCategories = active(data.categories).filter((category) => category.kind === 'expense');
   const untracked = expenseCategories.find((category) => category.name === 'Untracked spending') ?? expenseCategories[0];
-  const day = (iso: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(`${iso}T12:00:00`));
+  const day = (iso: string) => new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: 'medium' }).format(new Date(`${iso}T12:00:00`));
 
   async function run(work: () => Promise<void>) {
     setBusy(true);

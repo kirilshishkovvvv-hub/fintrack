@@ -599,7 +599,7 @@ const userTest: Scenario[] = [
     base: 'none',
     steps: exampleOne,
     checks: [
-      { at: '2026-03-18', uco: '215.00', uga: '200.00', safeToSpend: '1085.00', perDay: '155.00', windowTo: '2026-03-24', dueOnPayday: ['Rent'], expectedIncome: [] },
+      { at: '2026-03-18', uco: '215.00', uga: '200.00', safeToSpend: '1085.00', perDay: '155.00', windowTo: '2026-03-24', dueOnPayday: ['Rent'], expectedIncome: ['Salary'] },
       { at: '2026-03-25', uco: '515.00', safeToSpend: '785.00', windowTo: '2026-03-25', dueOnPayday: [] },
       { at: '2026-03-26', uco: '610.00', safeToSpend: '690.00', windowTo: '2026-04-24', latePayday: ['Salary'] },
     ],
