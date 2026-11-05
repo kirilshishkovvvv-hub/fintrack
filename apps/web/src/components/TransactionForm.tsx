@@ -30,6 +30,7 @@ export interface FormValues {
   description: string;
   memo: string;
   payee: string;
+  goalId: string;
   refundOfId: string | null;
 }
 
@@ -60,6 +61,7 @@ export function valuesFrom(tx: Transaction, accounts: Map<string, Account>, cate
     description: tx.description ?? '',
     memo: tx.memo ?? '',
     payee: tx.payee ?? '',
+    goalId: '',
     refundOfId: tx.refundOfId ?? null,
     toId: '',
   };
@@ -122,6 +124,7 @@ export function TransactionForm({
   categories,
   currency,
   payees = [],
+  goalMoney = [],
   initial,
   lockKind,
   submitLabel,
@@ -132,6 +135,8 @@ export function TransactionForm({
   categories: Category[];
   currency: string;
   payees?: PayeeOption[];
+  /** Goal money by account, for the "paid from your goal money?" question (G-P4). Only on new entries. */
+  goalMoney?: { goalId: string; name: string; accountId: string; amount_minor: number }[];
   initial?: Partial<FormValues> | undefined;
   lockKind?: boolean;
   submitLabel: string;
@@ -156,6 +161,7 @@ export function TransactionForm({
     description: '',
     memo: '',
     payee: '',
+    goalId: '',
     refundOfId: null,
     ...initial,
   });
@@ -190,6 +196,8 @@ export function TransactionForm({
     if (fits && values.lines.length === 1 && !values.lines[0]!.target) set({ payee: name, lines: [{ ...values.lines[0]!, target: category.id }] });
     else set({ payee: name });
   }
+
+  const holding = goalMoney.filter((goal) => goal.accountId === values.accountId);
 
   const firstTarget = kind === 'income' ? ofKind('income')[0]?.id : ofKind('expense')[0]?.id;
   const shownTarget = (line: Line) => line.target || firstTarget || '';
@@ -235,6 +243,7 @@ export function TransactionForm({
       ...(values.description.trim() ? { description: values.description.trim() } : {}),
       ...(values.memo.trim() ? { memo: values.memo.trim() } : {}),
       ...(values.payee.trim() ? { payee: values.payee.trim() } : {}),
+      ...(kind === 'expense' && holding.some((goal) => goal.goalId === values.goalId) ? { useGoalMoney: { goalId: values.goalId } } : {}),
     };
     const optional = (raw: string) => (raw.trim() === '' ? 0 : parseUserAmount(raw));
 
@@ -503,6 +512,21 @@ export function TransactionForm({
         <label htmlFor="date">{t('date')}</label>
         <input id="date" type="date" value={values.date} max={todayLocal()} required onChange={(event) => set({ date: event.target.value })} />
       </div>
+      {kind === 'expense' && holding.length > 0 && (
+        <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend style={{ fontWeight: 500, marginBottom: '0.35rem' }}>{t('goalMoneyQuestion')}</legend>
+          <div className="segmented segmented-wrap">
+            <label>
+              <input type="radio" name="goal-money" checked={!holding.some((goal) => goal.goalId === values.goalId)} onChange={() => set({ goalId: '' })} /> {t('goalMoneyNo')}
+            </label>
+            {holding.map((goal) => (
+              <label key={goal.goalId}>
+                <input type="radio" name="goal-money" checked={values.goalId === goal.goalId} onChange={() => set({ goalId: goal.goalId })} /> {goal.name} ({formatMoney(goal.amount_minor, currency)})
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
       <div className="field">
         <label htmlFor="payee">{t('payee')}</label>
         <input id="payee" type="text" maxLength={100} list="payee-options" autoComplete="off" value={values.payee} onChange={(event) => choosePayee(event.target.value)} />

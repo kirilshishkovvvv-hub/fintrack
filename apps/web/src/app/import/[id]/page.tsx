@@ -27,6 +27,8 @@ interface Row {
   createdTransactionId: string | null;
   claimedTransactionId: string | null;
   state: string;
+  occurrenceId: string | null;
+  planSuggestions: { occurrenceId: string; name: string; dueDate: string; amount_minor: number; outsideExpectedRange: boolean }[];
 }
 
 interface Batch {
@@ -113,7 +115,7 @@ export default function ImportReviewPage() {
     }
   }
 
-  const change = (decisions: { rowId: string; decision?: Decision; categoryId?: string | null; counterAccountId?: string | null }[]) =>
+  const change = (decisions: { rowId: string; occurrenceId?: string | null; decision?: Decision; categoryId?: string | null; counterAccountId?: string | null }[]) =>
     run(async () => {
       setSaved(await api<Batch>('PATCH', `/api/v1/imports/${id}/rows`, { ifMatch: batch.version, body: { decisions } }));
     });
@@ -216,6 +218,19 @@ export default function ImportReviewPage() {
                   </div>
                   <span className="amount">{money(row.amount_minor)}</span>
                 </div>
+                {review && row.planSuggestions.length > 0 && (
+                  <div className="field">
+                    <label htmlFor={`plan-${row.id}`}>{t('matchesPlan')}</label>
+                    <select id={`plan-${row.id}`} value={row.occurrenceId ?? ''} disabled={busy} onChange={(event) => void change([{ rowId: row.id, occurrenceId: event.target.value || null }])}>
+                      <option value="">{t('notThePlan')}</option>
+                      {row.planSuggestions.map((plan) => (
+                        <option key={plan.occurrenceId} value={plan.occurrenceId}>
+                          {plan.name} · {plan.dueDate} · {money(plan.amount_minor)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {open && (
                   <div className="grid-2">
                     <div className="field">

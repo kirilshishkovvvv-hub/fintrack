@@ -21,7 +21,7 @@ interface Options {
   ifMatch?: number;
 }
 
-export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, options: Options = {}): Promise<T> {
+export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, options: Options = {}): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json' };
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
@@ -56,6 +56,9 @@ const TRANSLATED_CODES = new Set([
   'PAYEE_NAME_TAKEN',
   'OPENING_DATE_TOO_LATE',
   'CURRENCY_LOCKED',
+  'ALLOCATION_EXCEEDS_UNALLOCATED',
+  'ALREADY_LINKED',
+  'BUDGET_BRANCH_CONFLICT',
   'DECISIONS_REQUIRED',
   'CURRENCY_CONFIRM_REQUIRED',
 ]);

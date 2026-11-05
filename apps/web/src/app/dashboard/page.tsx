@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { AccountRow } from '@/components/AccountRow';
 import { AppShell } from '@/components/AppShell';
+import { SafeToSpendCard } from '@/components/SafeToSpendCard';
 import { TransactionRow } from '@/components/TransactionRow';
 import { api } from '@/lib/api';
 import { formatMoney } from '@/lib/money';
+import { loadRules } from '@/lib/plan';
 import { active, currentMonth, loadAccounts, loadCategories, loadSummary, useApiData, type Transaction } from '@/lib/use-api';
 
 export default function DashboardPage() {
@@ -14,13 +16,15 @@ export default function DashboardPage() {
   const tApp = useTranslations('app');
   const { data, failed, reload } = useApiData(async () => {
     const month = currentMonth();
-    const [summary, accounts, categories, transactions] = await Promise.all([
+    const [summary, accounts, categories, transactions, rules] = await Promise.all([
       loadSummary(),
       loadAccounts(),
       loadCategories(),
       api<{ items: Transaction[] }>('GET', `/api/v1/transactions?from=${month.from}&to=${month.to}`).then((r) => r.items),
+      loadRules(),
     ]);
-    return { summary, accounts, categories, transactions };
+    // §7.6: without a payday the figure looks 30 days ahead, so ask once.
+    return { summary, accounts, categories, transactions, hasPayday: rules.some((rule) => rule.isPayday && rule.status === 'active') };
   });
 
   if (failed) {
@@ -49,43 +53,16 @@ export default function DashboardPage() {
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
   const categoryMap = new Map(categories.map((category) => [category.id, category]));
   const recent = data.transactions.filter((tx) => tx.kind !== 'opening_balance').slice(0, 5);
-  const available = Math.max(sts.eligibleFunds_minor, 0);
-  const reservedShare = available > 0 ? Math.min(100, ((sts.cardReserve_minor + sts.protectedReserve_minor) / available) * 100) : 0;
 
   return (
     <AppShell>
-      <section className="card card-hero" aria-labelledby="sts-title">
-        <p className="eyebrow" id="sts-title">
-          {t('safeToSpend')}
+      <SafeToSpendCard sts={sts} currency={currency} />
+
+      {!data.hasPayday && (
+        <p className="notice notice-info small">
+          {t('whenPaid')} <Link href="/plan/rules/new?payday=1">{t('whenPaidLink')}</Link>
         </p>
-        <p className="hero-amount">
-          {sts.value_minor < 0 ? '−' : ''}
-          {formatMoney(Math.abs(sts.value_minor), currency)}
-        </p>
-        <p className="small muted">{t('safeToSpendNote')}</p>
-        <div className="split-bar" aria-hidden="true">
-          <span style={{ width: `${100 - reservedShare}%`, background: 'var(--brand)' }} />
-          <span style={{ width: `${reservedShare}%`, background: 'var(--warning)' }} />
-        </div>
-        <details>
-          <summary>{t('howCalculated')}</summary>
-          <div className="row">
-            <span>{t('available')}</span>
-            <span className="amount">{formatMoney(sts.eligibleFunds_minor, currency)}</span>
-          </div>
-          <div className="row">
-            <span>{t('cardReserve')}</span>
-            <span className="amount">−{formatMoney(sts.cardReserve_minor, currency)}</span>
-          </div>
-          <div className="row">
-            <span>{t('protectedReserve')}</span>
-            <span className="amount">−{formatMoney(sts.protectedReserve_minor, currency)}</span>
-          </div>
-          <p className="small muted" style={{ marginTop: '0.5rem' }}>
-            {t('plannedComing')}
-          </p>
-        </details>
-      </section>
+      )}
 
       {summary.uncategorized.map((item) => (
         <p className="notice notice-warning small" key={item.categoryId}>

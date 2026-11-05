@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import type { SafeToSpend as SafeToSpendFigures } from './plan';
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiProblem } from './api';
 
@@ -99,7 +100,7 @@ export interface Summary {
   currency: 'EUR' | 'USD';
   netWorth_minor: number;
   uncategorized: { categoryId: string; kind: string; total_minor: number }[];
-  safeToSpend: { value_minor: number; eligibleFunds_minor: number; cardReserve_minor: number; protectedReserve_minor: number };
+  safeToSpend: SafeToSpendFigures;
 }
 
 /**

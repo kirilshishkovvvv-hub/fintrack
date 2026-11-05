@@ -330,6 +330,20 @@ GT-09 and GT-10, plus the import parts of GT-39 and GT-71 and the export and sea
 | T-68 | **Search compares text with accents removed (`searchText`, AC-22.4)**, separately from `normalizeDescription`, which import fingerprints depend on | Changing the shared function would change fingerprints. | Easy |
 | T-69 | **The dashboard's Uncategorized notice covers the current month**, like the rest of the dashboard's activity (AC-05.3). The category filter finds older rows | One period per screen. | Easy |
 
+### Stage 5, from 5 Nov 2026
+
+| ID | Choice | Why | Reversal |
+|---|---|---|---|
+| T-70 | **A one-off planned item is a rule with frequency `once`**, so every occurrence has a rule holding its template. Stage 2 §5 has `rule_id` null with one-off fields on the occurrence | One path for confirming, matching and editing. | Medium |
+| T-71 | **A rule's template is its lines:** categories, the other account for a transfer, the liability then categories for a debt payment. The funding side is their sum, so no balance trigger is needed (Stage 2 §5 names one) | A template can't be unbalanced at all. | Medium |
+| T-72 | **Occurrences are generated when a read needs them**, through `ensureOccurrences`. The worker that will do this daily (AD-10) doesn't exist yet | Idempotent by its key, so moving it to the worker changes nothing else. | Easy |
+| T-73 | **A null `category_id` in `budget_limits` is the overall monthly limit** (BR-07.3) | Stage 2 §5 names no place for it. | Easy |
+| T-74 | **A threshold alert is recorded when a transaction is saved or budgets are read.** There's no notification centre yet: FR-20 in-app is a Should | AC-07.2 needs the event; showing it on the budget is enough for now. | Easy |
+| T-75 | **Unlinking an occurrence doesn't put back goal money released when it was paid.** The user sets it aside again | M-8 allows unmatching at any time; guessing whether the money returned could overstate a goal. Worth re-checking in the user test. | Easy |
+| T-76 | **"When do you usually get paid?" (§7.6) is a prompt on the dashboard**, shown until a payday rule exists, not a step in onboarding | A rule needs an account, and onboarding has none yet. | Easy |
+| T-77 | **A goal's state (reached, used) is worked out, not stored** | It can never disagree with the money. | Easy |
+| T-78 | **Interest paid in the debt overview adds categories whose name starts with "Interest"** | There's no system key for it yet; a renamed category would drop out. To replace with a key before languages switch on. | Easy |
+
 ### Added to the plan by you
 
 - **Passkeys (your decision, 4 Nov 2026):** sign-in with Face ID, Windows Hello or a fingerprint, on phones and computers. The device checks the face or finger; we store no biometric data. Password stays as the backup. This moves passkeys from "later" (Stage 1 §12) into the first release. **To be built right after CSV import and the browser tests, within Stage 4.**

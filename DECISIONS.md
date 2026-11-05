@@ -1,6 +1,6 @@
 # Decisions
 
-The important decisions, with why and their status. Full reasoning: Stage 1 §2 and §14, Stage 2 §14 and Annex R. Smaller technical choices (T-1 to T-69) are in [docs/progress-log.md](docs/progress-log.md); only those that matter across the project appear here.
+The important decisions, with why and their status. Full reasoning: Stage 1 §2 and §14, Stage 2 §14 and Annex R. Smaller technical choices (T-1 to T-78) are in [docs/progress-log.md](docs/progress-log.md); only those that matter across the project appear here.
 
 **Status:** ✅ confirmed by the user · 🔧 provisional: my technical choice inside the approved design, reversible · ❓ unresolved.
 
@@ -88,3 +88,5 @@ Inside the design, and reversible unless noted. Each is in the progress log.
 | T-60, T-63 | Added routes: account detail, opening balance, reorder | Stage 2 §9.2 | 🔧 |
 | T-61 | A date-only change also breaks a reconciliation | E-03 wording | 🔧 |
 | T-64 | `PATCH /me` not built while only English is on | Stage 2 §9.2 | 🔧 temporary |
+| T-70, T-71 | One-off items are rules with frequency `once`; a template's funding side is the sum of its lines | Stage 2 §5 | 🔧 |
+| T-72 | Occurrences generated on read until the worker exists | Stage 2 §4 (AD-10) | 🔧 temporary |

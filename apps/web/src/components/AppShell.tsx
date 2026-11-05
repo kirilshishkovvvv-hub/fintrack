@@ -9,6 +9,7 @@ const NAV = [
   { href: '/dashboard', key: 'dashboard', icon: '⌂' },
   { href: '/transactions', key: 'transactions', icon: '≡' },
   { href: '/transactions/new', key: 'add', icon: '+', className: 'nav-add' },
+  { href: '/plan', key: 'plan', icon: '◷' },
   { href: '/accounts', key: 'accounts', icon: '◫' },
 ] as const;
 

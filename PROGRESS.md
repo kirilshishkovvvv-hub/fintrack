@@ -7,8 +7,9 @@ _Last verified against the code: 4 Nov 2026, see "Test results". Documents updat
 ## Handoff
 
 - **Current stage:** Stage 4 (core application) plus the import work moved forward (AP-15). **The buildable list is finished. Stage 4's exit needs only a staging deploy,** which needs a Render account: see "What still stands between Stage 4 and done".
-- **Current task:** none in progress. The Stage 4 report went to the user.
-- **Next action:** start Stage 5, ledger and API first. The Safe to Spend user test (Stage 2 §17.2) must run before the Stage 5 UI is finalized, not before Stage 5 starts.
+- **Current task:** Stage 5 (user's autonomy decision, after "Finish Stage 4 first"). Domain rules, golden tests, database and API are committed (`a33d6b8`, `db6eee6`).
+- **In progress, not committed until tested:** the screens: `/plan`, `/plan/rules`, `/budgets`, `/goals`, `/debts`, the Safe to Spend card, the goal-money prompt and the matching hint. Their browser tests are in `e2e/planning.spec.ts`.
+- **Next action:** get `e2e/planning.spec.ts` passing, run the full suite, commit. Then a clickable prototype with invented data for the Safe to Spend user test (Stage 2 §17.2), which must run before these screens are final. The user recruits the 5 people.
 - **Don't:** new queries stay plain SQL until decision D-1.
 
 ## Correction to an earlier report
@@ -22,8 +23,8 @@ On 4 Nov I told the user "Stage 4 is built" and described 2FA as optional for th
 | 1 Requirements, 2 Architecture | ✅ Approved 2 Nov 2026 |
 | 3 Ledger core, login, isolation | ✅ Built, except staging (needs a Render account) |
 | 4 Core application | 🟡 Built and tested; exit needs staging only; legal text needs a lawyer |
-| 7 Import (moved forward, AP-15) | 🟡 Built, except matching to planned bills (needs Stage 5) and real bank files |
-| 5 Planning, full Safe to Spend | ⏳ Not started |
+| 7 Import (moved forward, AP-15) | 🟡 Built, including matching to planned bills (API tested, screen in progress); real bank files untested |
+| 5 Planning, full Safe to Spend | 🟡 Rules, API and database built and tested; screens in progress; user test not run |
 | 6 Reports | ⏳ Not started |
 | 8 Hardening, 9 Launch | ⏳ Not started; each needs explicit approval |
 
