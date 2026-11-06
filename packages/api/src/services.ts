@@ -28,6 +28,8 @@ import {
   createWorkspace,
   ensureOccurrences,
   loadAllocations,
+  loadLedgerTotals,
+  loadRecentRecords,
   loadPlannedItems,
   relinkOccurrence,
   reopenLinkedOccurrence,
@@ -68,7 +70,7 @@ import type {
   editTransactionBody,
   transactionsQuery,
 } from './schemas.ts';
-import { evaluateBudgetAlerts } from './budgets.ts';
+import { alertsForMonth } from './budget-alerts.ts';
 import { matchSuggestions, releaseGoalMoney, safeToSpendFigures } from './plan-state.ts';
 import { DEFAULT_CATEGORIES } from './seed.ts';
 
@@ -180,13 +182,13 @@ export async function createAccount(db: Db, context: RequestContext, input: z.in
     await insertTransaction(db, context.workspaceId, opening, { origin: 'system', userId: context.userId });
   }
   await recordAuditEvent(db, { workspaceId: context.workspaceId, userId: context.userId, type: 'account.created', objectType: 'account', objectId: account.id });
-  return accountDto(new Ledger(chart, await loadTransactions(db, context.workspaceId)), chart.get(account.id), todayIn(workspace.timezone));
+  return accountDto(new Ledger(chart, await loadLedgerTotals(db, context.workspaceId)), chart.get(account.id), todayIn(workspace.timezone));
 }
 
 export async function listAccounts(db: Db, context: RequestContext) {
   const workspace = await getWorkspace(db, context.workspaceId);
   const chart = await loadChart(db, context.workspaceId);
-  const ledger = new Ledger(chart, await loadTransactions(db, context.workspaceId));
+  const ledger = new Ledger(chart, await loadLedgerTotals(db, context.workspaceId));
   const today = todayIn(workspace.timezone);
   const details = await accountDetails(db, context.workspaceId);
   const order = (account: LedgerAccount) => details.get(account.id)?.sortOrder ?? 0;
@@ -356,7 +358,7 @@ async function record(db: Db, context: RequestContext, tx: Transaction, chart: C
   await learnFrom(db, context, tx, chart, text.payeeId);
   await audit(db, context, 'transaction.created', tx.id);
   const plan = await applyPlanLinks(db, context, tx, chart, input, text);
-  await evaluateBudgetAlerts(db, context, new Ledger(chart, await loadTransactions(db, context.workspaceId)), tx.date.slice(0, 7));
+  await alertsForMonth(db, context, chart, tx.date.slice(0, 7));
   return { ...withUndo(transactionDto({ tx, origin, version: 1, trashedAt: null, ...text }), versionId), ...plan };
 }
 
@@ -416,7 +418,7 @@ export async function recordTransaction(db: Db, context: RequestContext, input: 
 async function moveAllocationsWith(db: Db, context: RequestContext, chart: Chart, input: TransferInput) {
   const workspace = await getWorkspace(db, context.workspaceId);
   const today = todayIn(workspace.timezone);
-  const ledger = new Ledger(chart, await loadTransactions(db, context.workspaceId));
+  const ledger = new Ledger(chart, await loadLedgerTotals(db, context.workspaceId));
   const allocations = await loadAllocations(db, context.workspaceId);
   const onSource = allocations.filter((allocation) => allocation.accountId === input.fromAccountId);
   const moves = [...allocationsToMove(ledger.balance(input.fromAccountId, today), onSource)];
@@ -457,21 +459,31 @@ export async function listTransactions(db: Db, context: RequestContext, query: z
   const isOwn = (id: string) => chart.find(id)?.account !== undefined;
   const subtree = query.categoryId ? chart.categorySubtree(query.categoryId) : null;
   const text = query.q ? searchText(query.q) : null;
+  // A dashboard or report drill-down: the lines add up to that widget's figure (AC-14.1).
+  const measured = query.measure ? new Set(chart.all().filter((account) => account.category && account.kind === query.measure && (!subtree || subtree.has(account.id))).map((account) => account.id)) : null;
+  const measureSign = query.measure === 'income' ? -1 : 1;
 
-  const effectOf = (tx: Transaction) => tx.postings.filter((p) => (query.accountId ? p.ledgerAccountId === query.accountId : isOwn(p.ledgerAccountId))).reduce((sum, p) => sum + p.amount, 0);
+  const effectOf = (tx: Transaction) =>
+    measured
+      ? tx.postings.filter((p) => measured.has(p.ledgerAccountId)).reduce((sum, p) => sum + measureSign * p.amount, 0)
+      : tx.postings.filter((p) => (query.accountId ? p.ledgerAccountId === query.accountId : isOwn(p.ledgerAccountId))).reduce((sum, p) => sum + p.amount, 0);
   /** The size a person would call this transaction: for a transfer, the amount moved. */
   const sizeOf = (tx: Transaction) => Math.max(0, ...tx.postings.filter((p) => isOwn(p.ledgerAccountId)).map((p) => Math.abs(p.amount)));
 
-  const matches = (await loadTransactionRecords(db, context.workspaceId))
-    .filter(({ tx, description, memo, payeeId, payeeName, origin }) => {
-      if (tx.status === 'trashed') return false;
-      if (query.from && tx.date < query.from) return false;
-      if (query.to && tx.date > query.to) return false;
-      if (query.accountId && !tx.postings.some((p) => p.ledgerAccountId === query.accountId)) return false;
+  // Everything SQL can decide is decided there; what's left needs the postings or the folded text.
+  const records = await loadTransactionRecords(db, context.workspaceId, {
+    excludeStatus: 'trashed',
+    from: query.from,
+    to: query.to,
+    kind: query.kind,
+    origin: query.origin,
+    payeeId: query.payeeId,
+    touching: query.accountId ? [query.accountId, ...(subtree ? [] : [])] : subtree ? [...subtree] : measured ? [...measured] : undefined,
+  });
+  const matches = records
+    .filter(({ tx, description, memo, payeeName }) => {
       if (subtree && !tx.postings.some((p) => subtree.has(p.ledgerAccountId))) return false;
-      if (query.payeeId && payeeId !== query.payeeId) return false;
-      if (query.kind && tx.kind !== query.kind) return false;
-      if (query.origin && origin !== query.origin) return false;
+      if (measured && !tx.postings.some((p) => measured.has(p.ledgerAccountId))) return false;
       if (query.reconciled && locked.has(tx.id) !== (query.reconciled === 'true')) return false;
       if (query.minAmount_minor !== undefined && sizeOf(tx) < query.minAmount_minor) return false;
       if (query.maxAmount_minor !== undefined && sizeOf(tx) > query.maxAmount_minor) return false;
@@ -498,8 +510,7 @@ export async function listTransactions(db: Db, context: RequestContext, query: z
 
 /** The trash: recoverable for 30 days, then purged (FR-19, OD-05). Most recently deleted first. */
 export async function listTrash(db: Db, context: RequestContext) {
-  return (await loadTransactionRecords(db, context.workspaceId))
-    .filter((record) => record.tx.status === 'trashed')
+  return (await loadTransactionRecords(db, context.workspaceId, { status: 'trashed' }))
     .sort((a, b) => (a.trashedAt! < b.trashedAt! ? 1 : -1))
     .map((record) => ({ ...transactionDto(record), purgeAfter: addDaysToTimestamp(record.trashedAt!, TRASH_DAYS) }));
 }
@@ -548,7 +559,7 @@ export async function editTransaction(db: Db, context: RequestContext, id: strin
   await learnFrom(db, context, tx, chart, text.payeeId);
   if (input.instalment !== undefined) await setInstalment(db, context.workspaceId, id, input.instalment && tx.kind === 'expense');
   await audit(db, context, 'transaction.edited', id);
-  await evaluateBudgetAlerts(db, context, new Ledger(chart, await loadTransactions(db, context.workspaceId)), tx.date.slice(0, 7));
+  await alertsForMonth(db, context, chart, tx.date.slice(0, 7));
   return withUndo(transactionDto({ ...existing, ...text, tx, version: result.version }), result.versionId);
 }
 
@@ -698,22 +709,30 @@ export function transactionDto(record: TransactionRecord, locked: ReadonlySet<st
 // Summary (dashboard figures available in Stage 3)
 // ---------------------------------------------------------------------------
 
-export async function summary(db: Db, context: RequestContext, at?: string) {
-  const workspace = await getWorkspace(db, context.workspaceId);
-  const today = todayIn(workspace.timezone);
-  const date = at ?? today;
-  if (date > today) throw new ApiError(422, 'VALIDATION_FAILED', 'The summary date cannot be in the future');
-  const chart = await loadChart(db, context.workspaceId);
-  const records = await loadTransactionRecords(db, context.workspaceId);
-  const ledger = new Ledger(chart, records.map((record) => record.tx));
-  // AC-05.3: the Uncategorized total is shown whenever it isn't zero.
-  const month = date.slice(0, 7);
+/** AC-05.3: the Uncategorized total is shown whenever it isn't zero. */
+export async function uncategorizedTotals(db: Db, context: RequestContext, ledger: Ledger, month: string) {
   const uncategorized = [];
   for (const key of ['expense.uncategorized', 'income.uncategorized'] as const) {
     const id = await findCategoryBySystemKey(db, context.workspaceId, key);
     const total = id ? ledger.categoryMonthTotal(id, month) : 0;
     if (id && total !== 0) uncategorized.push({ categoryId: id, kind: key.split('.')[0]!, total_minor: total });
   }
+  return uncategorized;
+}
+
+/** The newest actual transactions, for the dashboard: opening balances aren't activity. */
+export async function recentTransactions(db: Db, context: RequestContext, count: number, locked: ReadonlySet<string>) {
+  return (await loadRecentRecords(db, context.workspaceId, count)).map((record) => transactionDto(record, locked));
+}
+
+export async function summary(db: Db, context: RequestContext, at?: string) {
+  const workspace = await getWorkspace(db, context.workspaceId);
+  const today = todayIn(workspace.timezone);
+  const date = at ?? today;
+  if (date > today) throw new ApiError(422, 'VALIDATION_FAILED', 'The summary date cannot be in the future');
+  const chart = await loadChart(db, context.workspaceId);
+  const ledger = new Ledger(chart, await loadLedgerTotals(db, context.workspaceId));
+  const uncategorized = await uncategorizedTotals(db, context, ledger, date.slice(0, 7));
   return {
     at: date,
     currency: workspace.currency,
@@ -722,6 +741,6 @@ export async function summary(db: Db, context: RequestContext, at?: string) {
     liabilities_minor: ledger.liabilities(date),
     netWorth_minor: ledger.netWorth(date),
     uncategorized,
-    safeToSpend: await safeToSpendFigures(db, context, ledger, workspace, date, records),
+    safeToSpend: await safeToSpendFigures(db, context, ledger, workspace, date),
   };
 }

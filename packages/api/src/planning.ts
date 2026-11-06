@@ -2,7 +2,7 @@
  * Recurring rules and planned occurrences (FR-08, FR-11). Occurrences are completed by
  * confirming, by linking an existing transaction, or skipped; matching only ever suggests (M-5).
  */
-import { generationHorizon, Ledger, projection, regenerate, todayIn, type Chart, type Transaction } from '@fintrack/domain';
+import { generationHorizon, Ledger, projection, regenerate, todayIn, type Chart } from '@fintrack/domain';
 import {
   applyRuleToOccurrence,
   cancelOccurrences,
@@ -21,8 +21,7 @@ import {
   listRules,
   loadChart,
   loadTransactionRecord,
-  loadTransactionRecords,
-  loadTransactions,
+  loadLedgerTotals,
   plannedItem,
   recordAuditEvent,
   scheduleOf,
@@ -365,9 +364,8 @@ export async function getSafeToSpend(db: Db, context: RequestContext) {
   const workspace = await getWorkspace(db, context.workspaceId);
   const on = todayIn(workspace.timezone);
   const chart = await loadChart(db, context.workspaceId);
-  const records = await loadTransactionRecords(db, context.workspaceId);
-  const ledger = new Ledger(chart, records.map((record) => record.tx));
-  return { at: on, currency: workspace.currency, ...(await safeToSpendFigures(db, context, ledger, workspace, on, records)) };
+  const ledger = new Ledger(chart, await loadLedgerTotals(db, context.workspaceId));
+  return { at: on, currency: workspace.currency, ...(await safeToSpendFigures(db, context, ledger, workspace, on)) };
 }
 
 /** FR-13 (a Should): the daily projection, with its lowest point. */
@@ -377,8 +375,7 @@ export async function getProjection(db: Db, context: RequestContext, days: numbe
   await ensureOccurrences(db, context.workspaceId, on);
   const rules = new Map((await listRules(db, context.workspaceId)).map((rule) => [rule.id, rule]));
   const planned = (await listOccurrences(db, context.workspaceId)).filter((occurrence) => occurrence.status === 'planned').map((occurrence) => plannedItem(occurrence, rules.get(occurrence.ruleId)!));
-  const transactions: Transaction[] = await loadTransactions(db, context.workspaceId);
-  const result = projection({ ledger: new Ledger(await loadChart(db, context.workspaceId), transactions), today: on, days, planned, countSavingsTransfers: workspace.stsCountSavingsTransfers });
+  const result = projection({ ledger: new Ledger(await loadChart(db, context.workspaceId), await loadLedgerTotals(db, context.workspaceId)), today: on, days, planned, countSavingsTransfers: workspace.stsCountSavingsTransfers });
   return {
     days: result.days.map((day) => ({ date: day.date, commitmentsOnly_minor: day.commitmentsOnly, withIncome_minor: day.withIncome })),
     lowest: { date: result.lowest.date, amount_minor: result.lowest.amount },

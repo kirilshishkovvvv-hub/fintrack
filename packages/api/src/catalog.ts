@@ -15,7 +15,7 @@ import {
   payeeNameTaken,
   updatePayee,
   loadChart,
-  loadTransactions,
+  loadLedgerTotals,
   mergeCategory,
   recordAuditEvent,
   setArchived,
@@ -68,7 +68,7 @@ export async function setAccountArchived(db: Db, context: RequestContext, id: st
   const chart = await loadChart(db, context.workspaceId);
   const account = chart.find(id);
   if (!account?.account) throw new ApiError(404, 'NOT_FOUND', 'Account not found');
-  const ledger = new Ledger(chart, await loadTransactions(db, context.workspaceId));
+  const ledger = new Ledger(chart, await loadLedgerTotals(db, context.workspaceId));
   if (archived && !account.archived && ledger.rawBalance(id, ALL_TIME) !== 0) {
     throw new ApiError(409, 'ARCHIVE_BLOCKED', 'Bring the balance to 0 first: transfer the rest elsewhere, or reconcile with an adjustment', {
       balance_minor: ledger.balance(id, ALL_TIME),

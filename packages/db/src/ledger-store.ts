@@ -294,8 +294,22 @@ export interface TransactionRecord extends TransactionText {
   trashedAt: string | null;
 }
 
-/** Loads every transaction of the workspace with its postings in line order, optionally only one. */
-export async function loadTransactionRecords(db: Db, workspaceId: string, onlyId?: string): Promise<TransactionRecord[]> {
+export interface RecordFilter {
+  id?: string | undefined;
+  from?: string | undefined;
+  to?: string | undefined;
+  kind?: string | undefined;
+  origin?: string | undefined;
+  payeeId?: string | undefined;
+  status?: Transaction['status'] | undefined;
+  excludeStatus?: Transaction['status'] | undefined;
+  /** Only transactions with a posting to one of these ledger accounts. */
+  touching?: readonly string[] | undefined;
+}
+
+/** Loads the workspace's transactions with their postings in line order, narrowed by the filter in SQL. */
+export async function loadTransactionRecords(db: Db, workspaceId: string, filter: RecordFilter | string = {}): Promise<TransactionRecord[]> {
+  const only: RecordFilter = typeof filter === 'string' ? { id: filter } : filter;
   const result = await db.query<PostingRow>(`
     SELECT t.id AS transaction_id, to_char(t.txn_date, 'YYYY-MM-DD') AS txn_date, t.kind, t.status, t.refund_of_id,
            t.origin, t.description, t.memo, t.payee_id, pa.name AS payee_name, t.version, t.trashed_at::text,
@@ -304,7 +318,14 @@ export async function loadTransactionRecords(db: Db, workspaceId: string, onlyId
       JOIN fin.postings p ON p.transaction_id = t.id
       LEFT JOIN fin.payees pa ON pa.id = t.payee_id AND pa.workspace_id = t.workspace_id
      WHERE t.workspace_id = $1 AND p.workspace_id = $1 AND ($2::uuid IS NULL OR t.id = $2)
-     ORDER BY t.txn_date, t.id, p.line_no`, [workspaceId, onlyId ?? null]);
+       AND ($3::date IS NULL OR t.txn_date >= $3) AND ($4::date IS NULL OR t.txn_date <= $4)
+       AND ($5::text IS NULL OR t.kind = $5) AND ($6::text IS NULL OR t.origin = $6)
+       AND ($7::uuid IS NULL OR t.payee_id = $7)
+       AND ($8::text IS NULL OR t.status = $8) AND ($9::text IS NULL OR t.status <> $9)
+       AND ($10::uuid[] IS NULL OR EXISTS (
+             SELECT 1 FROM fin.postings x
+              WHERE x.transaction_id = t.id AND x.workspace_id = $1 AND x.ledger_account_id = ANY($10::uuid[])))
+     ORDER BY t.txn_date, t.id, p.line_no`, [workspaceId, only.id ?? null, only.from ?? null, only.to ?? null, only.kind ?? null, only.origin ?? null, only.payeeId ?? null, only.status ?? null, only.excludeStatus ?? null, only.touching ?? null]);
   const byId = new Map<string, TransactionRecord>();
   for (const row of result.rows) {
     let record = byId.get(row.transaction_id);
@@ -329,6 +350,48 @@ export async function loadTransactionRecords(db: Db, workspaceId: string, onlyId
 /** Loads every transaction of the workspace with its postings, in line order. */
 export async function loadTransactions(db: Db, workspaceId: string): Promise<Transaction[]> {
   return (await loadTransactionRecords(db, workspaceId)).map((record) => record.tx);
+}
+
+/**
+ * What the Ledger needs, without loading every transaction (NFR-03): the postings summed per
+ * day and account, directly from the index. Each row is a stand-in transaction holding one day's
+ * totals, kept apart for opening balances because Cash Change leaves those out (§2.3). Only ever
+ * posted money, so a Ledger built from this gives the same figures as one built from every
+ * transaction: the golden tests run both. Not for anything that needs a transaction's identity.
+ */
+export async function loadLedgerTotals(db: Db, workspaceId: string, range: { from?: string; to?: string } = {}): Promise<Transaction[]> {
+  const result = await db.query<{ txn_date: string; opening: boolean; ledger_account_id: string; amount: string }>(
+    `SELECT to_char(p.txn_date, 'YYYY-MM-DD') AS txn_date, t.kind = 'opening_balance' AS opening, p.ledger_account_id, SUM(p.amount_minor)::text AS amount
+       FROM fin.postings p JOIN fin.transactions t ON t.id = p.transaction_id AND t.workspace_id = p.workspace_id
+      WHERE p.workspace_id = $1 AND p.txn_status = 'posted'
+        AND ($2::date IS NULL OR p.txn_date >= $2) AND ($3::date IS NULL OR p.txn_date <= $3)
+      GROUP BY 1, 2, 3`,
+    [workspaceId, range.from ?? null, range.to ?? null],
+  );
+  const byDay = new Map<string, Transaction>();
+  for (const row of result.rows) {
+    const key = `${row.txn_date}|${row.opening}`;
+    let tx = byDay.get(key);
+    if (!tx) {
+      tx = { id: key, date: row.txn_date, kind: row.opening ? 'opening_balance' : 'split', status: 'posted', postings: [] };
+      byDay.set(key, tx);
+    }
+    const amount = Number(row.amount);
+    if (!Number.isSafeInteger(amount)) throw new Error(`Unsafe total in postings: ${row.amount}`);
+    tx.postings.push({ ledgerAccountId: row.ledger_account_id, amount });
+  }
+  return [...byDay.values()];
+}
+
+/** The newest posted and voided transactions, opening balances left out. */
+export async function loadRecentRecords(db: Db, workspaceId: string, count: number): Promise<TransactionRecord[]> {
+  const ids = await db.query<{ id: string }>(
+    `SELECT id FROM fin.transactions WHERE workspace_id = $1 AND status <> 'trashed' AND kind <> 'opening_balance' ORDER BY txn_date DESC, id DESC LIMIT $2`,
+    [workspaceId, count],
+  );
+  const records = [];
+  for (const row of ids.rows) records.push((await loadTransactionRecords(db, workspaceId, row.id))[0]!);
+  return records;
 }
 
 export async function loadTransactionRecord(db: Db, workspaceId: string, id: string): Promise<TransactionRecord | null> {

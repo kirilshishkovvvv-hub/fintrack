@@ -24,7 +24,7 @@ import { ZodError, type z } from 'zod';
 import { FRESH_SESSION_SECONDS, SESSION_ABSOLUTE_SECONDS, SESSION_IDLE_SECONDS, SESSION_KEEP_IDLE_SECONDS, type Auth, type OutgoingEmail } from './auth.ts';
 import * as deletion from './deletion.ts';
 import * as imports from './imports.ts';
-import { buildExport } from './export.ts';
+import { buildExport, numeric, toCsv, type Cell } from './export.ts';
 import { ApiError, json, problem, readJson, readOptionalJson, requestHash, requiredVersion } from './http.ts';
 import * as catalog from './catalog.ts';
 import * as reconciliation from './reconciliation.ts';
@@ -33,6 +33,7 @@ import * as services from './services.ts';
 import * as budgets from './budgets.ts';
 import * as goals from './goals.ts';
 import * as planning from './planning.ts';
+import * as reports from './reports.ts';
 import * as settings from './settings.ts';
 
 export interface AppDependencies {
@@ -65,6 +66,11 @@ interface Route {
 }
 
 const UUID = '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})';
+
+/** A report as a spreadsheet file (FR-15): formulas neutralized, like the export. */
+function csvResponse(name: string, header: readonly string[], rows: Cell[][]): Response {
+  return new Response(new Uint8Array(toCsv(header, rows)), { status: 200, headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${name}"` } });
+}
 
 export function createApp(deps: AppDependencies) {
   /** Runs work in the caller's workspace, which is always resolved on the server (Stage 2 §8.3). */
@@ -201,6 +207,59 @@ export function createApp(deps: AppDependencies) {
       handler: async (call) => {
         const { days } = schemas.projectionQuery.parse(Object.fromEntries(call.url.searchParams));
         return json(200, await inWorkspace(call.userId, (db, context) => planning.getProjection(db, context, days)));
+      },
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/dashboard$/,
+      handler: async (call) => {
+        const query = schemas.dashboardQuery.parse(Object.fromEntries(call.url.searchParams));
+        // Reading fires any budget threshold just crossed, so it takes the write lock.
+        return json(200, await inWorkspace(call.userId, (db, context) => reports.getDashboard(db, context, query), true));
+      },
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/reports\/income-expenses$/,
+      handler: async (call) => {
+        const query = schemas.monthsQuery.parse(Object.fromEntries(call.url.searchParams));
+        const report = await inWorkspace(call.userId, (db, context) => reports.incomeExpensesReport(db, context, query));
+        if (query.format === 'csv') return csvResponse('income-expenses.csv', ['month', 'income', 'expenses', 'net_result'], report.rows.map((row) => [row.month, numeric(row.income_minor), numeric(row.expenses_minor), numeric(row.netResult_minor)]));
+        return json(200, report);
+      },
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/reports\/categories$/,
+      handler: async (call) => {
+        const query = schemas.categoriesQuery.parse(Object.fromEntries(call.url.searchParams));
+        const report = await inWorkspace(call.userId, (db, context) => reports.categoriesReport(db, context, query));
+        if (query.format === 'csv') {
+          return csvResponse('categories.csv', ['category', 'subcategory', 'total'], report.rows.flatMap((row) => [[row.name, null, numeric(row.total_minor)], ...row.children.map((child) => [row.name, child.name, numeric(child.total_minor)])]));
+        }
+        return json(200, report);
+      },
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/reports\/comparison$/,
+      handler: async (call) => {
+        const query = schemas.comparisonQuery.parse(Object.fromEntries(call.url.searchParams));
+        const report = await inWorkspace(call.userId, (db, context) => reports.comparisonReport(db, context, query));
+        if (query.format === 'csv') {
+          return csvResponse('comparison.csv', ['line', 'period_a', 'period_b', 'change'], [...report.totals, ...report.categories].map((line) => [line.name, numeric(line.a_minor), numeric(line.b_minor), numeric(line.change_minor)]));
+        }
+        return json(200, report);
+      },
+    },
+    {
+      method: 'GET',
+      pattern: /^\/api\/v1\/reports\/net-worth$/,
+      handler: async (call) => {
+        const query = schemas.monthsQuery.parse(Object.fromEntries(call.url.searchParams));
+        const report = await inWorkspace(call.userId, (db, context) => reports.netWorthReport(db, context, query));
+        if (query.format === 'csv') return csvResponse('net-worth.csv', ['month', 'assets', 'liabilities', 'net_worth', 'change'], report.rows.map((row) => [row.month, numeric(row.assets_minor), numeric(row.liabilities_minor), numeric(row.netWorth_minor), numeric(row.change_minor)]));
+        return json(200, report);
       },
     },
     { method: 'GET', pattern: /^\/api\/v1\/rules$/, handler: async (call) => json(200, { items: await inWorkspace(call.userId, planning.getRules) }) },

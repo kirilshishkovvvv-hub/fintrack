@@ -56,7 +56,7 @@ export class Ledger {
   }
 
   liabilities(onDate: IsoDate): Cents {
-    return -this.sum((tx, p) => tx.date <= onDate && this.chart.get(p.ledgerAccountId).kind === 'liability');
+    return 0 - this.sum((tx, p) => tx.date <= onDate && this.chart.get(p.ledgerAccountId).kind === 'liability');
   }
 
   netWorth(onDate: IsoDate): Cents {
@@ -64,7 +64,7 @@ export class Ledger {
   }
 
   income(period: Period): Cents {
-    return -this.sum((tx, p) => inPeriod(tx, period) && this.chart.get(p.ledgerAccountId).kind === 'income');
+    return 0 - this.sum((tx, p) => inPeriod(tx, period) && this.chart.get(p.ledgerAccountId).kind === 'income');
   }
 
   expenses(period: Period): Cents {
@@ -87,7 +87,7 @@ export class Ledger {
   equityEffect(code: Exclude<SystemCode, 'TIT'>, period: Period): Cents {
     const id = this.systemId(code);
     if (!id) return 0;
-    return -this.sum((tx, p) => inPeriod(tx, period) && p.ledgerAccountId === id);
+    return 0 - this.sum((tx, p) => inPeriod(tx, period) && p.ledgerAccountId === id);
   }
 
   /**
@@ -120,6 +120,20 @@ export class Ledger {
       for (const p of tx.postings) {
         if (this.chart.get(p.ledgerAccountId).kind !== 'expense') continue;
         result.set(p.ledgerAccountId, (result.get(p.ledgerAccountId) ?? 0) + p.amount);
+      }
+    }
+    return result;
+  }
+
+  /** Per category, as shown to the user: expenses as Σ, income as −Σ. */
+  categoryTotals(kind: 'expense' | 'income', period: Period): Map<string, Cents> {
+    const result = new Map<string, Cents>();
+    const sign = kind === 'income' ? -1 : 1;
+    for (const tx of this.active) {
+      if (!inPeriod(tx, period)) continue;
+      for (const p of tx.postings) {
+        if (this.chart.get(p.ledgerAccountId).kind !== kind) continue;
+        result.set(p.ledgerAccountId, (result.get(p.ledgerAccountId) ?? 0) + sign * p.amount);
       }
     }
     return result;

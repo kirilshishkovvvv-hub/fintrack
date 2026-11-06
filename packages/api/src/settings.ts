@@ -53,7 +53,7 @@ const signedFor = (chart: Chart, id: string, raw: number) => (chart.get(id).kind
 export async function accountDetail(db: Db, context: RequestContext, id: string) {
   const chart = await loadChart(db, context.workspaceId);
   const account = accountOr404(chart, id);
-  const records = await loadTransactionRecords(db, context.workspaceId);
+  const records = await loadTransactionRecords(db, context.workspaceId, { touching: [id] });
   const workspace = await getWorkspace(db, context.workspaceId);
   const details = (await accountDetails(db, context.workspaceId)).get(id)!;
   const opening = openingOf(records, id);
@@ -121,7 +121,7 @@ export async function changeOpening(db: Db, context: RequestContext, id: string,
   const info = account.account!;
   if (account.archived) throw new ApiError(409, 'ARCHIVE_BLOCKED', 'Unarchive the account first');
   const workspace = await getWorkspace(db, context.workspaceId);
-  const records = await loadTransactionRecords(db, context.workspaceId);
+  const records = await loadTransactionRecords(db, context.workspaceId, { touching: [id] });
   const existing = openingOf(records, id);
   const currentAmount = existing?.tx.status === 'posted' ? signedFor(chart, id, existing.tx.postings.find((p) => p.ledgerAccountId === id)!.amount) : 0;
   const date = input.openingDate ?? info.openingDate;

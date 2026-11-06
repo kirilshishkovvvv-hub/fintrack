@@ -33,9 +33,9 @@ export function inertText(value: string): string {
 }
 
 /** Marks a cell from a numeric-only column, which FR-17 exempts from escaping: "-8.00" must stay a number. */
-const numeric = (minor: number) => ({ numeric: formatAmount(minor) });
+export const numeric = (minor: number) => ({ numeric: formatAmount(minor) });
 
-type Cell = string | number | boolean | null | { numeric: string };
+export type Cell = string | number | boolean | null | { numeric: string };
 
 function cellText(cell: Cell): string {
   if (cell === null) return '';

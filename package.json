@@ -15,7 +15,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p apps/web/tsconfig.json",
     "dev:all": "node scripts/dev.ts",
     "dev": "npm run dev -w @fintrack/web",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "perf": "vitest run --config vitest.perf.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

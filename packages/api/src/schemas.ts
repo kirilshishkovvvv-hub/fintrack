@@ -242,6 +242,8 @@ export const transactionsQuery = z
     kind: z.enum(['expense', 'income', 'transfer', 'refund', 'debt_payment', 'split', 'opening_balance', 'adjustment', 'valuation']).optional(),
     origin: z.enum(['manual', 'import', 'occurrence', 'system']).optional(),
     reconciled: z.enum(['true', 'false']).optional(),
+    /** A dashboard or report drill-down: the total is what this kind of category received (AC-14.1). */
+    measure: z.enum(['expense', 'income']).optional(),
     minAmount_minor: minorQuery.optional(),
     maxAmount_minor: minorQuery.optional(),
     cursor: z.string().max(60).regex(/^\d{4}-\d{2}-\d{2}_[0-9a-f-]{36}$/).optional(),
@@ -366,6 +368,17 @@ export const budgetBody = z.strictObject({
 
 export const debtsQuery = z.strictObject({ from: isoDate, to: isoDate }).refine((p) => p.from <= p.to, 'from must not be after to');
 export const projectionQuery = z.strictObject({ days: z.enum(['30', '60', '90']).default('30').transform(Number) });
+
+const reportMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'must be a month in YYYY-MM form');
+const periodBody = { from: isoDate, to: isoDate };
+export const dashboardQuery = z.strictObject({ from: isoDate.optional(), to: isoDate.optional() });
+export const monthsQuery = z.strictObject({ from: reportMonth, to: reportMonth, format: z.enum(['json', 'csv']).default('json') });
+export const categoriesQuery = z
+  .strictObject({ ...periodBody, kind: z.enum(['expense', 'income']).default('expense'), format: z.enum(['json', 'csv']).default('json') })
+  .refine((p) => p.from <= p.to, 'from must not be after to');
+export const comparisonQuery = z
+  .strictObject({ aFrom: isoDate, aTo: isoDate, bFrom: isoDate, bTo: isoDate, format: z.enum(['json', 'csv']).default('json') })
+  .refine((p) => p.aFrom <= p.aTo && p.bFrom <= p.bTo, 'from must not be after to');
 
 export const updatePayeeBody = z.strictObject({ name: text(100).optional(), defaultCategoryId: id.nullable().optional() });
 export const mergePayeeBody = z.strictObject({ intoId: id });

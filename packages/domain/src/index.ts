@@ -9,5 +9,6 @@ export * from './planning.ts';
 export * from './goals.ts';
 export * from './sts.ts';
 export * from './projection.ts';
+export * from './reports.ts';
 export * from './reconcile.ts';
 export * from './csv-import.ts';

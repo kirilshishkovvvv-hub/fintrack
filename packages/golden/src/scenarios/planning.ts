@@ -620,4 +620,52 @@ const userTest: Scenario[] = [
   },
 ];
 
-export const planning: Scenario[] = [...plannedVersusActual, ...window, ...cards, ...goals, ...fullMonth, ...userTest];
+/** §6.12: GT-60, the comparison report, by exact integers. */
+const comparison: Scenario[] = [
+  {
+    id: 'GT-60',
+    title: 'September against October',
+    base: 'none',
+    steps: [
+      { op: 'account', name: 'Current', type: 'current', opening: '10000.00', date: '2026-08-31' },
+      { op: 'income', date: '2026-09-01', account: 'Current', lines: [['Salary', '2000.00']] },
+      { op: 'income', date: '2026-10-01', account: 'Current', lines: [['Salary', '2000.00']] },
+      { op: 'expense', date: '2026-09-01', account: 'Current', lines: [['Rent', '600.00']] },
+      { op: 'expense', date: '2026-09-02', account: 'Current', lines: [['Utilities', '140.00']] },
+      { op: 'expense', date: '2026-09-03', account: 'Current', lines: [['Interest', '52.00']] },
+      { op: 'expense', date: '2026-09-04', account: 'Current', lines: [['Food', '330.00']] },
+      { op: 'expense', date: '2026-09-05', account: 'Current', lines: [['Transport', '130.00']] },
+      { op: 'expense', date: '2026-09-06', account: 'Current', lines: [['Entertainment', '150.00']] },
+      { op: 'expense', date: '2026-09-07', account: 'Current', lines: [['Shopping', '98.00']] },
+      { op: 'expense', date: '2026-10-01', account: 'Current', lines: [['Rent', '600.00']] },
+      { op: 'expense', date: '2026-10-02', account: 'Current', lines: [['Utilities', '162.00']] },
+      { op: 'expense', date: '2026-10-03', account: 'Current', lines: [['Interest', '50.00']] },
+      { op: 'expense', date: '2026-10-04', account: 'Current', lines: [['Food', '390.00']] },
+      { op: 'expense', date: '2026-10-05', account: 'Current', lines: [['Transport', '105.00']] },
+      { op: 'expense', date: '2026-10-06', account: 'Current', lines: [['Entertainment', '60.00']] },
+      { op: 'expense', date: '2026-10-07', account: 'Current', lines: [['Shopping', '60.00']] },
+    ],
+    checks: [
+      {
+        at: '2026-10-31',
+        comparison: {
+          a: { from: '2026-09-01', to: '2026-09-30' },
+          b: { from: '2026-10-01', to: '2026-10-31' },
+          lines: {
+            income: ['2000.00', '2000.00', '0.00', '0.0 %'],
+            expenses: ['1500.00', '1427.00', '-73.00', '−4.9 %'],
+            netResult: ['500.00', '573.00', '73.00', '+14.6 %'],
+            Utilities: ['140.00', '162.00', '22.00', '+15.7 %'],
+            Interest: ['52.00', '50.00', '-2.00', '−3.8 %'],
+            Food: ['330.00', '390.00', '60.00', '+18.2 %'],
+            Transport: ['130.00', '105.00', '-25.00', '−19.2 %'],
+            Entertainment: ['150.00', '60.00', '-90.00', '−60.0 %'],
+            Shopping: ['98.00', '60.00', '-38.00', '−38.8 %'],
+          },
+        },
+      },
+    ],
+  },
+];
+
+export const planning: Scenario[] = [...plannedVersusActual, ...window, ...cards, ...goals, ...fullMonth, ...userTest, ...comparison];

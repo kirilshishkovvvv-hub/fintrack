@@ -3,6 +3,7 @@
  * from the services so the transaction services can use it without a circular import.
  */
 import {
+  addDays,
   normalizeDescription,
   possibleDoubleCounts,
   safeToSpend,
@@ -23,6 +24,7 @@ import {
   listGoals,
   loadAllocations,
   loadPlannedItems,
+  loadTransactionRecords,
   type Db,
   type RequestContext,
   type TransactionRecord,
@@ -84,7 +86,7 @@ const plannedDto = (item: PlannedItem) => ({
 });
 
 /** The value, its window, each term with its items, and the information lines (§7.10, P8). */
-export async function safeToSpendFigures(db: Db, context: RequestContext, ledger: Ledger, workspace: WorkspaceRow, today: IsoDate, records: readonly TransactionRecord[]) {
+export async function safeToSpendFigures(db: Db, context: RequestContext, ledger: Ledger, workspace: WorkspaceRow, today: IsoDate) {
   const { planned, allocations } = await loadPlanState(db, context, today);
   const sts = safeToSpend({
     ledger,
@@ -99,8 +101,11 @@ export async function safeToSpendFigures(db: Db, context: RequestContext, ledger
 
   // M-7: only entries no plan has claimed can be the double count.
   const linked = await linkedTransactionIds(db, context.workspaceId);
+  // A look-alike can only be within W (at most 5 days) of an item counted here.
+  const dues = sts.ucoItems.flatMap((item) => ('item' in item ? [item.item.dueDate] : [])).sort();
+  const records = dues.length === 0 ? [] : await loadTransactionRecords(db, context.workspaceId, { status: 'posted', from: addDays(dues[0]!, -5), to: addDays(dues.at(-1)!, 5) });
   const movements = records
-    .filter(({ tx }) => tx.status === 'posted' && !linked.has(tx.id) && !['opening_balance', 'adjustment', 'valuation'].includes(tx.kind))
+    .filter(({ tx }) => !linked.has(tx.id) && !['opening_balance', 'adjustment', 'valuation'].includes(tx.kind))
     .flatMap((record) => movementsOf(record.tx, ledger.chart, payerOf(record)).map((movement) => ({ ...movement, transactionId: record.tx.id })));
   const doubles = possibleDoubleCounts(sts.ucoItems.flatMap((item) => ('item' in item ? [item.item] : [])), movements);
 

@@ -21,5 +21,4 @@ export const notYetEncoded: { id: string; reason: string; stage: number }[] = [
   { id: 'GT-10', reason: 'Transfers in Transit is a Should Have', stage: 4 },
   { id: 'GT-46', reason: 'investment contribution and valuation; investment accounts are a Should', stage: 6 },
   { id: 'GT-47', reason: 'reinvested dividend with a valuation; investment accounts are a Should', stage: 6 },
-  { id: 'GT-60', reason: 'month-by-month comparison report', stage: 6 },
 ];

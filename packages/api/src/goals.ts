@@ -25,7 +25,7 @@ import {
   loadChart,
   loadPlannedItems,
   loadTransactionRecord,
-  loadTransactions,
+  loadLedgerTotals,
   recordAuditEvent,
   setDedicatedGoal,
   setGoalFunding,
@@ -48,7 +48,7 @@ function event(db: Db, context: RequestContext, type: string, goalId: string) {
 async function ledgerAt(db: Db, context: RequestContext) {
   const workspace = await getWorkspace(db, context.workspaceId);
   const chart = await loadChart(db, context.workspaceId);
-  return { today: todayIn(workspace.timezone), chart, ledger: new Ledger(chart, await loadTransactions(db, context.workspaceId)) };
+  return { today: todayIn(workspace.timezone), chart, ledger: new Ledger(chart, await loadLedgerTotals(db, context.workspaceId)) };
 }
 
 async function goalOr404(db: Db, context: RequestContext, id: string): Promise<GoalRow> {

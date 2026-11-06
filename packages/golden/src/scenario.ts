@@ -127,6 +127,8 @@ export interface Check {
   backed?: Record<string, Amount>;
   progress?: Record<string, Amount>;
   scheduled?: ScheduledCheck[];
+  /** A against B: each line's A, B, change and % change, by category name or total key (GT-60). */
+  comparison?: { a: { from: string; to: string }; b: { from: string; to: string }; lines: Record<string, [Amount, Amount, Amount, string]> };
   flows?: FlowCheck[];
   budgets?: BudgetCheck[];
 }

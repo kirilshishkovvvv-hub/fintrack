@@ -5,6 +5,7 @@
 import {
   formatUtilization,
   Ledger,
+  monthRange,
   scheduledInMonth,
   thresholdReached,
   todayIn,
@@ -21,7 +22,7 @@ import {
   listBudgetLimits,
   loadChart,
   loadPlannedItems,
-  loadTransactions,
+  loadLedgerTotals,
   recordAuditEvent,
   setBudgetLimit,
   type BudgetLimitRow,
@@ -59,12 +60,13 @@ export async function evaluateBudgetAlerts(db: Db, context: RequestContext, ledg
   }
 }
 
-export async function getBudgets(db: Db, context: RequestContext, month: string) {
+export async function getBudgets(db: Db, context: RequestContext, month: string, known?: Ledger) {
   const workspace = await getWorkspace(db, context.workspaceId);
   const today = todayIn(workspace.timezone);
   await ensureOccurrences(db, context.workspaceId, today);
   const chart = await loadChart(db, context.workspaceId);
-  const ledger = new Ledger(chart, await loadTransactions(db, context.workspaceId));
+  const range = monthRange(month);
+  const ledger = known ?? new Ledger(chart, await loadLedgerTotals(db, context.workspaceId, range));
   await evaluateBudgetAlerts(db, context, ledger, month);
   const limits = await listBudgetLimits(db, context.workspaceId);
   const planned = await loadPlannedItems(db, context.workspaceId);
@@ -106,11 +108,14 @@ export async function getBudgets(db: Db, context: RequestContext, month: string)
     total: {
       limit_minor: totalLimit,
       spent_minor: rows.reduce((sum, row) => sum + row.spent_minor, 0),
+      /** Spending in categories with no budget, so the report reconciles with Expenses (AC-07.5). */
+      unbudgeted_minor: ledger.expenses(range) - rows.reduce((sum, row) => sum + row.spent_minor, 0),
+      expenses_minor: ledger.expenses(range),
     },
     overall: overall
       ? {
           limit_minor: overall.limit!,
-          spent_minor: ledger.expenses({ from: firstOf(month), to: new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 0)).toISOString().slice(0, 10) }),
+          spent_minor: ledger.expenses(range),
           /** BR-07.3: a warning, and nothing is blocked. */
           budgetsExceedIt: totalLimit > overall.limit!,
         }
@@ -156,7 +161,7 @@ export async function getDebts(db: Db, context: RequestContext, period: { from: 
   const today = todayIn(workspace.timezone);
   await ensureOccurrences(db, context.workspaceId, today);
   const chart = await loadChart(db, context.workspaceId);
-  const ledger = new Ledger(chart, await loadTransactions(db, context.workspaceId));
+  const ledger = new Ledger(chart, await loadLedgerTotals(db, context.workspaceId));
   const details = await accountDetails(db, context.workspaceId);
   const before = new Date(Date.parse(`${period.from}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
   const planned = await loadPlannedItems(db, context.workspaceId);

@@ -6,8 +6,10 @@ import { expect } from 'vitest';
 import {
   formatAmount,
   backedByGoal,
+  formatPercentChange,
   formatUtilization,
   parseAmount,
+  periodComparison,
   safeToSpend,
   scheduledInMonth,
   thresholdReached,
@@ -63,6 +65,18 @@ export function verifyCheck(ledger: Ledger, check: Check, idOf: (name: string) =
   for (const scheduled of check.scheduled ?? []) {
     const categories = new Set(ledger.chart.categorySubtree(idOf(scheduled.category)));
     expect(money(scheduledInMonth(planning?.planned ?? [], categories, scheduled.month, at)), `${scheduled.category} scheduled`).toBe(expected(scheduled.amount));
+  }
+
+  if (check.comparison) {
+    const report = periodComparison(ledger, check.comparison.a, check.comparison.b);
+    const lines = new Map([...report.totals.map((line) => [line.key, line] as const), ...report.categories.map((line) => [line.name, line] as const)]);
+    for (const [name, [a, b, change, percent]] of Object.entries(check.comparison.lines)) {
+      const line = lines.get(name);
+      expect(line, `${name} in the comparison`).toBeDefined();
+      expect([money(line!.a), money(line!.b), money(line!.change), formatPercentChange(line!.percentTenths)], `comparison: ${name}`).toEqual([expected(a), expected(b), expected(change), percent]);
+    }
+    const changes = report.categories.reduce((sum, line) => sum + line.change, 0);
+    expect(changes, 'the category changes sum to the change in Expenses').toBe(report.totals.find((line) => line.key === 'expenses')!.change);
   }
 
   for (const flow of check.flows ?? []) {

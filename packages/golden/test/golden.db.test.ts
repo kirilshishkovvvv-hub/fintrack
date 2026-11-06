@@ -14,6 +14,7 @@ import {
   insertLedgerAccount,
   insertTransaction,
   loadChart,
+  loadLedgerTotals,
   loadTransactions,
   uuidv7,
   withWorkspace,
@@ -109,6 +110,7 @@ describe('golden scenarios (PostgreSQL round trip)', () => {
         { write: true },
       );
 
+      const totals = await withWorkspace(database.pool, context, async (db) => new Ledger(await loadChart(db, context.workspaceId), await loadLedgerTotals(db, context.workspaceId)));
       const ledger = await withWorkspace(database.pool, context, async (db) => new Ledger(await loadChart(db, context.workspaceId), await loadTransactions(db, context.workspaceId)));
       const idOf = (name: string) => {
         const id = ids.get(name);
@@ -130,7 +132,11 @@ describe('golden scenarios (PostgreSQL round trip)', () => {
           allocations: state.allocations.map((allocation) => ({ ...allocation, accountId: idOf(allocation.accountId) })),
         };
       };
-      for (const check of scenario.checks) verifyCheck(ledger, check, idOf, planningAt);
+      for (const check of scenario.checks) {
+        verifyCheck(ledger, check, idOf, planningAt);
+        // NFR-03's shortcut must give the same answers as every transaction.
+        verifyCheck(totals, check, idOf, planningAt);
+      }
     });
   }
 });
