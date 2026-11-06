@@ -1,6 +1,6 @@
 # Decisions
 
-The important decisions, with why and their status. Full reasoning: Stage 1 §2 and §14, Stage 2 §14 and Annex R. Smaller technical choices (T-1 to T-89) are in [docs/progress-log.md](docs/progress-log.md); only those that matter across the project appear here.
+The important decisions, with why and their status. Full reasoning: Stage 1 §2 and §14, Stage 2 §14 and Annex R. Smaller technical choices (T-1 to T-90) are in [docs/progress-log.md](docs/progress-log.md); only those that matter across the project appear here.
 
 **Status:** ✅ confirmed by the user · 🔧 provisional: my technical choice inside the approved design, reversible · ❓ unresolved.
 

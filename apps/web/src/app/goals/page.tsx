@@ -154,8 +154,12 @@ export default function GoalsPage() {
 
   async function loadHistory(goal: Goal) {
     if (history[goal.id]) return;
-    const found = await api<{ items: HistoryLine[] }>('GET', `/api/v1/goals/${goal.id}/history`);
-    setHistory((current) => ({ ...current, [goal.id]: found.items }));
+    try {
+      const found = await api<{ items: HistoryLine[] }>('GET', `/api/v1/goals/${goal.id}/history`);
+      setHistory((current) => ({ ...current, [goal.id]: found.items }));
+    } catch (problem) {
+      setError(errorMessage(problem, tErrors));
+    }
   }
 
   const archive = (goal: Goal) => run(() => api('POST', `/api/v1/goals/${goal.id}/archive`, { idempotencyKey: newIdempotencyKey() }), t('archived', { name: goal.name }));

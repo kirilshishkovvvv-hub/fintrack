@@ -18,6 +18,7 @@ export default function AuditPage() {
   const tApp = useTranslations('app');
   const locale = useLocale();
   const [older, setOlder] = useState<AuditPage | null>(null);
+  const [olderFailed, setOlderFailed] = useState(false);
   const { data, failed, reload } = useApiData(() => api<AuditPage>('GET', '/api/v1/audit'));
   if (failed) return <LoadError retry={reload} />;
 
@@ -30,8 +31,13 @@ export default function AuditPage() {
   };
 
   async function showOlder() {
-    const page = await api<AuditPage>('GET', `/api/v1/audit?before=${next}`);
-    setOlder({ items: [...(older?.items ?? []), ...page.items], nextBefore: page.nextBefore });
+    setOlderFailed(false);
+    try {
+      const page = await api<AuditPage>('GET', `/api/v1/audit?before=${next}`);
+      setOlder({ items: [...(older?.items ?? []), ...page.items], nextBefore: page.nextBefore });
+    } catch {
+      setOlderFailed(true);
+    }
   }
 
   return (
@@ -52,6 +58,11 @@ export default function AuditPage() {
               </li>
             ))}
           </ol>
+        )}
+        {olderFailed && (
+          <p className="notice notice-error" role="alert" style={{ marginTop: '0.75rem' }}>
+            {tApp('genericError')}
+          </p>
         )}
         {next && (
           <button className="btn" type="button" style={{ marginTop: '0.75rem' }} onClick={() => void showOlder()}>

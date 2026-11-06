@@ -314,3 +314,41 @@ test('AC-04.4: a future date is refused, and planning it is offered instead', as
   await page.getByRole('link', { name: 'Plan it instead' }).click();
   await expect(page).toHaveURL(/\/plan\/rules\/new/);
 });
+
+test('Upcoming: Skip takes an item off the list; Match works for near and far dates, and says so when it fails', async ({ page }) => {
+  await signedInUser(page, { account: { name: 'Current', opening: 100000 } });
+  await addBill(page, 'Gym', '30', inDays(3));
+  await addBill(page, 'Rent', '600', inDays(1));
+  await addBill(page, 'Insurance', '200', inDays(20));
+
+  // Skip.
+  await page.goto('/plan');
+  await page.getByRole('button', { name: 'Skip Gym' }).click();
+  await expect(status(page)).toContainText('Gym skipped.');
+  await expect(page.getByRole('button', { name: 'Skip Gym' })).toHaveCount(0);
+
+  // Due more than 10 days away: nothing can match yet, and that isn't an error.
+  await page.getByRole('button', { name: 'Match Insurance' }).click();
+  await expect(page.getByText('No transactions around that date on this account.')).toBeVisible();
+  await expect(page.locator('main [role=alert]')).toHaveCount(0);
+
+  // When the search fails, the page says so.
+  await page.route('**/api/v1/transactions?*', (route) => route.fulfill({ status: 500, contentType: 'application/problem+json', body: JSON.stringify({ code: 'INTERNAL' }) }));
+  await page.getByRole('button', { name: 'Match Rent' }).click();
+  await expect(page.locator('main [role=alert]')).toBeVisible();
+  await page.unroute('**/api/v1/transactions?*');
+
+  // Due soon, with a payment already typed in: it can be linked.
+  await page.goto('/transactions/new');
+  await page.getByLabel('Amount').fill('600');
+  await page.getByLabel('Category').selectOption({ label: 'Household' });
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: 'Keep separate' }).click();
+  await page.goto('/plan');
+  await page.getByRole('button', { name: 'Match Rent' }).click();
+  await expect(page.getByLabel('Which transaction is it?')).toBeVisible();
+  await checkScreen(page, 'match on Upcoming');
+  await page.getByRole('button', { name: 'Link it' }).click();
+  await expect(status(page)).toContainText('Rent linked.');
+  await expect(page.getByRole('button', { name: 'Match Rent' })).toHaveCount(0);
+});

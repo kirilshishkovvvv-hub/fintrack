@@ -90,10 +90,24 @@ export default function PlanPage() {
   async function openMatch(item: Occurrence) {
     setActing({ id: item.id, mode: 'match' });
     setCandidates(null);
+    setError(null);
+    setNotice(null);
     const shift = (days: number) => new Date(Date.parse(`${item.dueDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
-    const to = shift(10) > todayLocal() ? todayLocal() : shift(10);
-    const found = await api<{ items: Transaction[] }>('GET', `/api/v1/transactions?accountId=${item.accountId}&from=${shift(-10)}&to=${to}&limit=50`);
-    setCandidates(found.items.filter((tx) => tx.status === 'posted' && tx.kind !== 'opening_balance'));
+    const today = todayLocal();
+    const from = shift(-10);
+    // Due more than 10 days from now: the search window hasn't started yet, so nothing can match.
+    if (from > today) return setCandidates([]);
+    const to = shift(10) > today ? today : shift(10);
+    setBusy(true);
+    try {
+      const found = await api<{ items: Transaction[] }>('GET', `/api/v1/transactions?accountId=${item.accountId}&from=${from}&to=${to}&limit=50`);
+      setCandidates(found.items.filter((tx) => tx.status === 'posted' && tx.kind !== 'opening_balance'));
+    } catch (problem) {
+      setActing(null);
+      setError(errorMessage(problem, tErrors));
+    } finally {
+      setBusy(false);
+    }
   }
 
   const match = (event: React.FormEvent<HTMLFormElement>, item: Occurrence) => {

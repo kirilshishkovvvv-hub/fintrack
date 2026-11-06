@@ -359,6 +359,7 @@ GT-09 and GT-10, plus the import parts of GT-39 and GT-71 and the export and sea
 | T-87 | **Charts are small hand-made SVGs, with no library** | One fewer third party (Annex L item 8). Each sits with a table of the same values. Colours pass the colour-blindness and contrast validator in both themes. | Easy |
 | T-88 | **Reports aren't in the bottom navigation**; they open from the Plan and the dashboard | Six items overflowed at 360 px. The browser width check now covers the fixed bar, which it missed before. | Easy |
 | T-89 | **`GET /transactions?measure=expense` or `income`:** a drill-down whose lines and total are what those categories received | AC-14.1 needs the lines to add up to the widget, which the account-effect total doesn't. | Easy |
+| T-90 | **Browser tests fail on any error a page does not catch** (`e2e/helpers.ts`) | Found 6 Nov 2026: Match on an item due more than 10 days away asked the server for a date range running backwards, hung on Loading and showed nothing. Fixed; Audit and Goals history had the same missing catch and now show a message. | Easy |
 
 ### Added to the plan by you
 

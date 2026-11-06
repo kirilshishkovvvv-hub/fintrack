@@ -67,9 +67,9 @@ On 4 Nov I told the user "Stage 4 is built" and described 2FA as optional for th
 
 | Check | Result | When |
 |---|---|---|
-| `npm test` | 468 passed, 7 todo, 0 failed, 23 files | 6 Nov 2026 |
+| `npm test` | 469 passed, 7 todo, 0 failed, 23 files | 6 Nov 2026 |
 | `npm run typecheck` | Clean | 6 Nov 2026 |
-| `npm run e2e` | 80 tests. Last full run: 78 passed; 2 failed (one test at both widths) on an accessibility finding on the cookies page. After the fix: the settings and reports specs passed, 18 of 18. Only that page changed after the full run | 6 Nov 2026 |
+| `npm run e2e` | 82 tests, 82 passed, at both widths. A test now also fails on any error a page does not catch (T-90) | 6 Nov 2026 |
 | `next build` | Compiled, with dummy settings | 6 Nov 2026 |
 | `npm run perf` | Every target met at both sizes | 6 Nov 2026 |
 

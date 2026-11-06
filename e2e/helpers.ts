@@ -29,9 +29,12 @@ export const test = base.extend({
     context.on('console', (message) => {
       if (message.text().includes('MISSING_MESSAGE')) missing.push(message.text());
     });
+    const uncaught: string[] = [];
+    context.on('weberror', (webError) => uncaught.push(webError.error().message));
     await use(context);
     await context.close();
     expect(missing, 'AC-22.1: no missing translation on screen').toEqual([]);
+    expect(uncaught, 'a failure the page did not catch shows the user nothing').toEqual([]);
   },
 });
 export { expect, type Browser };
