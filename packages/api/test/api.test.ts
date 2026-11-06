@@ -47,6 +47,20 @@ describe('login (FR-01)', () => {
     expect((await client.call('GET', '/api/v1/workspace')).status).toBe(401);
   });
 
+  test('a lost link: signing in with the right password sends a new one, and the wrong password sends nothing', async () => {
+    const client = new Client(harness);
+    const email = 'lost-link@example.com';
+    const links = () => harness.emails.filter((sent) => sent.to === email && sent.kind === 'verify-email').length;
+    await client.call('POST', '/api/auth/sign-up/email', { body: { email, password: PASSWORD, name: 'Lost', consents: CONSENTS } });
+    expect(links()).toBe(1);
+    await client.call('POST', '/api/auth/sign-up/email', { body: { email, password: PASSWORD, name: 'Lost', consents: CONSENTS } });
+    expect(links()).toBe(1);
+    expect((await client.call('POST', '/api/auth/sign-in/email', { body: { email, password: 'not the right password' } })).status).toBe(401);
+    expect(links()).toBe(1);
+    expect((await client.call('POST', '/api/auth/sign-in/email', { body: { email, password: PASSWORD } })).status).toBe(403);
+    expect(links()).toBe(2);
+  });
+
   test('signing up again with an existing email looks the same as a new sign-up (AC-01.2)', async () => {
     await verifiedUser(harness, 'existing@example.com');
     const fresh = await new Client(harness).call('POST', '/api/auth/sign-up/email', { body: { email: 'brand-new@example.com', password: PASSWORD, name: 'x', consents: CONSENTS } });

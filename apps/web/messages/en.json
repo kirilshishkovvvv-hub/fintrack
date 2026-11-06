@@ -31,7 +31,7 @@
     "haveAccount": "Already have an account?",
     "signIn": "Sign in",
     "checkInbox": "Check your inbox",
-    "checkInboxBody": "If this email can be used, we've sent a link to {email}. Open it to verify your address, then sign in.",
+    "checkInboxBody": "If this email can be used, we've sent a link to {email}. Open it to verify your address, then sign in. Signed up before and lost the link? Sign in, and we'll send a new one.",
     "consentRequired": "Accept the terms and privacy notice, and confirm you're 18 or older.",
     "passwordTooShort": "Use at least 12 characters."
   },

@@ -149,6 +149,8 @@ export function createAuth(deps: AuthDependencies) {
     user: { changeEmail: { enabled: true } },
     emailVerification: {
       sendOnSignUp: true,
+      // Signing up again sends nothing (AC-01.2), so this is the way back to a lost or expired link.
+      sendOnSignIn: true,
       expiresIn: 60 * 60,
       sendVerificationEmail: async ({ user, url }) => deps.sendEmail({ to: user.email, kind: 'verify-email', url }),
     },
