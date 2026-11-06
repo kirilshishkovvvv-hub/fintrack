@@ -119,6 +119,24 @@ describe('every month, whatever happened (properties)', () => {
     );
   });
 
+  test('the running sums give what adding up every posting gives, for any dates', () => {
+    const dateArb = fc.tuple(month, day).map(([m, d]) => `2026-${m}-${d}`);
+    fc.assert(
+      fc.property(fc.array(action, { maxLength: 40 }), dateArb, dateArb, (actions, x, y) => {
+        const ledger = buildAll(actions);
+        const [from, to] = x <= y ? [x, y] : [y, x];
+        const posted = actions.flatMap((a) => (a.type === 'expense' ? [{ date: a.date, account: a.category, amount: a.amount }] : a.type === 'refund' ? [{ date: a.date, account: a.category, amount: -a.amount }] : []));
+        const inRange = posted.filter((p) => p.date >= from && p.date <= to);
+        expect(ledger.expenses({ from, to })).toBe(inRange.reduce((sum, p) => sum + p.amount, 0));
+        const income = actions.filter((a) => a.type === 'income' && a.date >= from && a.date <= to).reduce((sum, a) => sum + a.amount, 0);
+        expect(ledger.income({ from, to })).toBe(income);
+        const balance = actions.filter((a) => a.date <= to).reduce((sum, a) => sum + (a.type === 'income' || a.type === 'refund' || a.type === 'adjust' ? a.amount : -a.amount), 0);
+        expect(ledger.balance('current', to)).toBe(balance);
+        expect(ledger.cashChange({ from, to })).toBe(actions.filter((a) => a.date >= from && a.date <= to).reduce((sum, a) => sum + (a.type === 'income' || a.type === 'refund' || a.type === 'adjust' ? a.amount : -a.amount), 0));
+      }),
+    );
+  });
+
   test('AC-15.1, AC-14.2: the category rows and the monthly flows sum to the same Expenses as the period', () => {
     fc.assert(
       fc.property(fc.array(action, { maxLength: 40 }), (actions) => {

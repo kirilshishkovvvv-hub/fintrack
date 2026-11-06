@@ -96,6 +96,8 @@ export async function signIn(page: Page, email: string, password = PASSWORD): Pr
 export async function expectFits(page: Page): Promise<void> {
   const [content, width] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
   expect(content, `page is ${content}px wide in a ${width}px window`).toBeLessThanOrEqual(width);
+  const navRight = await page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('.bottom-nav a')].map((link) => link.getBoundingClientRect().right)));
+  expect(navRight, 'the bottom navigation fits the window').toBeLessThanOrEqual(width);
 }
 
 /** WCAG 2.1 AA basics (NFR-08, Annex L items 13 to 15), plus the width check, on the screen as it stands. */

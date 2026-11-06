@@ -36,7 +36,7 @@ export default function LegalPage() {
         {doc === 'cookies' && (
           <>
             <p>{t('cookies.intro')}</p>
-            <div className="table-scroll">
+            <div className="table-scroll" tabIndex={0}>
               <table>
                 <thead>
                   <tr>
@@ -47,8 +47,8 @@ export default function LegalPage() {
                 <tbody>
                   {(t.raw('cookies.list') as { name: string; purpose: string }[]).map((cookie) => (
                     <tr key={cookie.name}>
-                      <td style={{ overflowWrap: 'anywhere' }}>{cookie.name}</td>
-                      <td>{cookie.purpose}</td>
+                      <td style={{ overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{cookie.name}</td>
+                      <td style={{ whiteSpace: 'normal' }}>{cookie.purpose}</td>
                     </tr>
                   ))}
                 </tbody>

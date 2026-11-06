@@ -1,6 +1,6 @@
 # Decisions
 
-The important decisions, with why and their status. Full reasoning: Stage 1 §2 and §14, Stage 2 §14 and Annex R. Smaller technical choices (T-1 to T-82) are in [docs/progress-log.md](docs/progress-log.md); only those that matter across the project appear here.
+The important decisions, with why and their status. Full reasoning: Stage 1 §2 and §14, Stage 2 §14 and Annex R. Smaller technical choices (T-1 to T-89) are in [docs/progress-log.md](docs/progress-log.md); only those that matter across the project appear here.
 
 **Status:** ✅ confirmed by the user · 🔧 provisional: my technical choice inside the approved design, reversible · ❓ unresolved.
 
@@ -57,7 +57,7 @@ The important decisions, with why and their status. Full reasoning: Stage 1 §2 
 | AD-14 | Idle 30 minutes, 14 days if chosen, 30 days at most | Fills gap X-3 | ✅ 2 Nov |
 | **AD-15** | **Optional 2FA ships at launch. Supersedes A-6 ("Should")** | Resolves contradiction X-2 | ✅ 2 Nov; screens built 4 Nov. My 4 Nov note that this was the user's call was wrong |
 | AD-16 | Authorization in services and the database, never in middleware | CVE-2025-29927 | ✅ |
-| AD-17 | No cached summaries unless NFR-03 tests fail | Nothing can drift | ✅ |
+| AD-17 | No cached summaries unless NFR-03 tests fail | Nothing can drift | ✅; measured 6 Nov: the targets are met without one (T-83) |
 | AD-18 | UUID version 7 | Unguessable; good for indexes | ✅ |
 | AD-19 | Pwned Passwords k-anonymity check | Only a hash prefix leaves the server | ✅ 2 Nov |
 | AD-20 | Currency enforced by the database | CUR-1 | ✅ |

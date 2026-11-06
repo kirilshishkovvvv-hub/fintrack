@@ -5,6 +5,7 @@
  * The times are for this machine and the embedded database, with one user at a time. The load
  * test against real infrastructure, with many users, belongs to Stage 8.
  */
+import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { build, type Transaction } from '@fintrack/domain';
 import { insertTransactionsBulk, uuidv7, withWorkspace } from '@fintrack/db';
@@ -49,6 +50,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   console.table(results);
+  writeFileSync('.pgdata/perf-results.json', JSON.stringify(results, null, 1));
   await harness?.stop();
 });
 
@@ -87,6 +89,28 @@ async function measure(size: number, name: string, limit: number | null, run: ()
   return entry;
 }
 
+/** NFR-03: importing 2,000 rows takes under 10 s, from the upload to the last row saved. */
+async function measureImport(size: number) {
+  let round = 0;
+  const started = performance.now();
+  const rows = Array.from({ length: 2000 }, (_, index) => `${today()},-${5 + (index % 90)}.${String(index % 90).padStart(2, '0')},IMPORT ${size} ${round} ${index}`).join('\n');
+  const form = new FormData();
+  form.set('file', new File([`Date,Amount,Text\n${rows}\n`], 'perf.csv'));
+  form.set('accountId', accounts[0]!);
+  form.set('settings', JSON.stringify({ encoding: 'utf-8', delimiter: ',', decimalSeparator: '.', dateFormat: 'YYYY-MM-DD', headerRow: 0, mapping: { date: 0, amount: 1, description: 2 } }));
+  const created = await harness.handle(new Request('http://localhost:3000/api/v1/imports', { method: 'POST', headers: { origin: 'http://localhost:3000', cookie: client.cookie, 'idempotency-key': key() }, body: form }));
+  expect(created.status).toBe(201);
+  const batch = (await created.json()) as { id: string };
+  const confirmed = await client.call('POST', `/api/v1/imports/${batch.id}/confirm`, { key: key(), body: { confirmCurrency: true } });
+  expect(confirmed.status, JSON.stringify(confirmed.body).slice(0, 200)).toBe(200);
+  round += 1;
+  const elapsed = Math.round(performance.now() - started);
+  const entry = { size, name: 'import 2,000 rows (one run)', p50: elapsed, p95: elapsed, limit: 10_000 };
+  results.push(entry);
+  console.log(JSON.stringify(entry));
+  return entry;
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => `${today().slice(0, 7)}-01`;
 
@@ -104,6 +128,11 @@ async function measureAll(size: number) {
     await measure(size, 'activity, this month', 3000, get(`/api/v1/transactions?from=${monthStart()}&to=${today()}&limit=50`)),
     await measure(size, 'search, all time, by text', 3000, get('/api/v1/transactions?q=number%20123&limit=50')),
     await measure(size, 'accounts', 1500, get('/api/v1/accounts')),
+    await measure(size, 'goals', 1500, get('/api/v1/goals')),
+    await measure(size, 'plan', 1500, get('/api/v1/occurrences')),
+    await measure(size, 'projection', 3000, get('/api/v1/projection?days=90')),
+    await measure(size, 'one transaction', 1500, get(`/api/v1/transactions?limit=1&from=${monthStart()}`)),
+    await measureImport(size),
     await measure(size, 'save an expense', 500, () =>
       client.call('POST', '/api/v1/transactions', { key: key(), body: { kind: 'expense', date: today(), accountId: accounts[0], lines: [{ categoryId: categories[9], amount_minor: 100 }] } }),
     ),

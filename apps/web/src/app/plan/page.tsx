@@ -245,6 +245,9 @@ export default function PlanPage() {
         <Link href="/debts" className="btn">
           {t('debts')}
         </Link>
+        <Link href="/reports" className="btn">
+          {t('reports')}
+        </Link>
       </div>
       {error && (
         <p className="notice notice-error" role="alert">

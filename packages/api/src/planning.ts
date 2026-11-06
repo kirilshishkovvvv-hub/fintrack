@@ -2,7 +2,7 @@
  * Recurring rules and planned occurrences (FR-08, FR-11). Occurrences are completed by
  * confirming, by linking an existing transaction, or skipped; matching only ever suggests (M-5).
  */
-import { generationHorizon, Ledger, projection, regenerate, todayIn, type Chart } from '@fintrack/domain';
+import { addDays, generationHorizon, Ledger, projection, regenerate, todayIn, type Chart } from '@fintrack/domain';
 import {
   applyRuleToOccurrence,
   cancelOccurrences,
@@ -375,9 +375,18 @@ export async function getProjection(db: Db, context: RequestContext, days: numbe
   await ensureOccurrences(db, context.workspaceId, on);
   const rules = new Map((await listRules(db, context.workspaceId)).map((rule) => [rule.id, rule]));
   const planned = (await listOccurrences(db, context.workspaceId)).filter((occurrence) => occurrence.status === 'planned').map((occurrence) => plannedItem(occurrence, rules.get(occurrence.ruleId)!));
-  const result = projection({ ledger: new Ledger(await loadChart(db, context.workspaceId), await loadLedgerTotals(db, context.workspaceId)), today: on, days, planned, countSavingsTransfers: workspace.stsCountSavingsTransfers });
+  const chart = await loadChart(db, context.workspaceId);
+  const result = projection({ ledger: new Ledger(chart, await loadLedgerTotals(db, context.workspaceId)), today: on, days, planned, countSavingsTransfers: workspace.stsCountSavingsTransfers });
   return {
     days: result.days.map((day) => ({ date: day.date, commitmentsOnly_minor: day.commitmentsOnly, withIncome_minor: day.withIncome })),
     lowest: { date: result.lowest.date, amount_minor: result.lowest.amount },
+    protectedReserve_minor: workspace.protectedReserveMinor,
+    /** I-12: a reserved card with a scheduled repayment comes off on that date. */
+    cards: planned
+      .filter((item) => {
+        const card = item.toAccountId ? chart.find(item.toAccountId)?.account : undefined;
+        return card?.type === 'card' && card.cardReserve && item.dueDate >= on && item.dueDate <= addDays(on, days);
+      })
+      .map((item) => ({ name: chart.get(item.toAccountId!).name, amount_minor: item.amount, date: item.dueDate })),
   };
 }

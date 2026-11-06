@@ -354,32 +354,52 @@ export async function loadTransactions(db: Db, workspaceId: string): Promise<Tra
 
 /**
  * What the Ledger needs, without loading every transaction (NFR-03): the postings summed per
- * day and account, directly from the index. Each row is a stand-in transaction holding one day's
- * totals, kept apart for opening balances because Cash Change leaves those out (§2.3). Only ever
+ * day and account, directly from the index. Each stand-in transaction holds one day's totals,
+ * with opening balances apart because Cash Change leaves those out (§2.3). Only ever
  * posted money, so a Ledger built from this gives the same figures as one built from every
  * transaction: the golden tests run both. Not for anything that needs a transaction's identity.
  */
 export async function loadLedgerTotals(db: Db, workspaceId: string, range: { from?: string; to?: string } = {}): Promise<Transaction[]> {
-  const result = await db.query<{ txn_date: string; opening: boolean; ledger_account_id: string; amount: string }>(
-    `SELECT to_char(p.txn_date, 'YYYY-MM-DD') AS txn_date, t.kind = 'opening_balance' AS opening, p.ledger_account_id, SUM(p.amount_minor)::text AS amount
-       FROM fin.postings p JOIN fin.transactions t ON t.id = p.transaction_id AND t.workspace_id = p.workspace_id
-      WHERE p.workspace_id = $1 AND p.txn_status = 'posted'
-        AND ($2::date IS NULL OR p.txn_date >= $2) AND ($3::date IS NULL OR p.txn_date <= $3)
-      GROUP BY 1, 2, 3`,
-    [workspaceId, range.from ?? null, range.to ?? null],
+  // Two index reads, so nothing joins every posting to its transaction.
+  const params = [workspaceId, range.from ?? null, range.to ?? null];
+  const all = await db.query<{ day: string; ledger_account_id: string; amount: string }>(
+    `SELECT to_char(s.txn_date, 'YYYY-MM-DD') AS day, s.ledger_account_id, s.amount::text
+       FROM (SELECT txn_date, ledger_account_id, SUM(amount_minor) AS amount FROM fin.postings
+              WHERE workspace_id = $1 AND txn_status = 'posted'
+                AND ($2::date IS NULL OR txn_date >= $2) AND ($3::date IS NULL OR txn_date <= $3)
+              GROUP BY 1, 2) s`,
+    params,
   );
+  const opening = await db.query<{ day: string; ledger_account_id: string; amount: string }>(
+    `SELECT to_char(t.txn_date, 'YYYY-MM-DD') AS day, p.ledger_account_id, SUM(p.amount_minor)::text AS amount
+       FROM fin.transactions t JOIN fin.postings p ON p.transaction_id = t.id AND p.workspace_id = t.workspace_id
+      WHERE t.workspace_id = $1 AND t.kind = 'opening_balance' AND t.status = 'posted'
+        AND ($2::date IS NULL OR t.txn_date >= $2) AND ($3::date IS NULL OR t.txn_date <= $3)
+      GROUP BY 1, 2`,
+    params,
+  );
+  const safe = (text: string) => {
+    const amount = Number(text);
+    if (!Number.isSafeInteger(amount)) throw new Error(`Unsafe total in postings: ${text}`);
+    return amount;
+  };
+  const openingAmounts = new Map(opening.rows.map((row) => [`${row.day}|${row.ledger_account_id}`, safe(row.amount)]));
   const byDay = new Map<string, Transaction>();
-  for (const row of result.rows) {
-    const key = `${row.txn_date}|${row.opening}`;
+  const add = (day: string, isOpening: boolean, ledgerAccountId: string, amount: number) => {
+    const key = isOpening ? `${day}|opening` : day;
     let tx = byDay.get(key);
     if (!tx) {
-      tx = { id: key, date: row.txn_date, kind: row.opening ? 'opening_balance' : 'split', status: 'posted', postings: [] };
+      tx = { id: key, date: day, kind: isOpening ? 'opening_balance' : 'split', status: 'posted', postings: [] };
       byDay.set(key, tx);
     }
-    const amount = Number(row.amount);
-    if (!Number.isSafeInteger(amount)) throw new Error(`Unsafe total in postings: ${row.amount}`);
-    tx.postings.push({ ledgerAccountId: row.ledger_account_id, amount });
+    tx.postings.push({ ledgerAccountId, amount });
+  };
+  for (const row of all.rows) {
+    const held = openingAmounts.get(`${row.day}|${row.ledger_account_id}`) ?? 0;
+    const rest = safe(row.amount) - held;
+    if (rest !== 0) add(row.day, false, row.ledger_account_id, rest);
   }
+  for (const row of opening.rows) add(row.day, true, row.ledger_account_id, safe(row.amount));
   return [...byDay.values()];
 }
 

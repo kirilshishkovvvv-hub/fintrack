@@ -185,10 +185,10 @@ export async function createAccount(db: Db, context: RequestContext, input: z.in
   return accountDto(new Ledger(chart, await loadLedgerTotals(db, context.workspaceId)), chart.get(account.id), todayIn(workspace.timezone));
 }
 
-export async function listAccounts(db: Db, context: RequestContext) {
+export async function listAccounts(db: Db, context: RequestContext, known?: Ledger) {
   const workspace = await getWorkspace(db, context.workspaceId);
-  const chart = await loadChart(db, context.workspaceId);
-  const ledger = new Ledger(chart, await loadLedgerTotals(db, context.workspaceId));
+  const chart = known?.chart ?? (await loadChart(db, context.workspaceId));
+  const ledger = known ?? new Ledger(chart, await loadLedgerTotals(db, context.workspaceId));
   const today = todayIn(workspace.timezone);
   const details = await accountDetails(db, context.workspaceId);
   const order = (account: LedgerAccount) => details.get(account.id)?.sortOrder ?? 0;

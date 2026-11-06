@@ -474,7 +474,7 @@ export function createApp(deps: AppDependencies) {
     {
       method: 'GET',
       pattern: /^\/api\/v1\/accounts$/,
-      handler: async (call) => json(200, { items: await inWorkspace(call.userId, services.listAccounts) }),
+      handler: async (call) => json(200, { items: await inWorkspace(call.userId, (db, context) => services.listAccounts(db, context)) }),
     },
     { method: 'POST', pattern: /^\/api\/v1\/accounts$/, handler: idempotentWrite(schemas.createAccountBody, services.createAccount) },
     {

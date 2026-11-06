@@ -348,6 +348,18 @@ GT-09 and GT-10, plus the import parts of GT-39 and GT-71 and the export and sea
 | T-81 | **Dates in English use the British order everywhere** (`dateLocale`) | §10.3; next-intl's plain `en` gave US dates in an EU product. Seen only by looking at the screen. | Easy |
 | T-82 | **Browser accessibility checks wait for the page title** | Next.js streams it in; the check sometimes ran first. That explains the one unexplained failure from 4 Nov. A page with no title still fails. | Easy |
 
+### Stage 6, 6 Nov 2026
+
+| ID | Choice | Why | Reversal |
+|---|---|---|---|
+| T-83 | **The Ledger builds running sums per account when it's created**, and figures are lookups instead of passes over every posting | The net worth report took 5.4 s at 50,000. It's now 0.3 s. Nothing is stored, so nothing can drift, and AD-17's summary table isn't needed. A property test compares it with adding up by brute force. | Easy |
+| T-84 | **`loadLedgerTotals` gives the Ledger stand-in transactions: one day's totals per account, from the index** | No join over every posting. The golden tests run on both this and the real transactions, and must agree. | Easy |
+| T-85 | **Import and reconciliation still read every transaction** | They need each transaction's identity. Within target at 50,000; import is at 9.8 s of 10 s at 100,000. Worth narrowing if real use gets near that. | Easy |
+| T-86 | **Net worth for a past date opens the net worth report** rather than a list of accounts as of that date | The accounts list shows today. A strict reading of AC-14.1 would want the list by date; the report gives assets and liabilities at each month-end. | Easy |
+| T-87 | **Charts are small hand-made SVGs, with no library** | One fewer third party (Annex L item 8). Each sits with a table of the same values. Colours pass the colour-blindness and contrast validator in both themes. | Easy |
+| T-88 | **Reports aren't in the bottom navigation**; they open from the Plan and the dashboard | Six items overflowed at 360 px. The browser width check now covers the fixed bar, which it missed before. | Easy |
+| T-89 | **`GET /transactions?measure=expense` or `income`:** a drill-down whose lines and total are what those categories received | AC-14.1 needs the lines to add up to the widget, which the account-effect total doesn't. | Easy |
+
 ### Added to the plan by you
 
 - **Passkeys (your decision, 4 Nov 2026):** sign-in with Face ID, Windows Hello or a fingerprint, on phones and computers. The device checks the face or finger; we store no biometric data. Password stays as the backup. This moves passkeys from "later" (Stage 1 §12) into the first release. **To be built right after CSV import and the browser tests, within Stage 4.**

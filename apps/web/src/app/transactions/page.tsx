@@ -56,6 +56,8 @@ function Activity() {
   });
   const [result, setResult] = useState<SearchResult | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // Kept out of the filter form: it says what is being added up, not which lines to look at.
+  const measure = params.get('measure') === 'income' ? 'income' : params.get('measure') === 'expense' ? 'expense' : null;
   // Read by the loader, which also runs again after any change elsewhere on the page.
   const shown = useRef(filters);
 
@@ -69,6 +71,7 @@ function Activity() {
     if (min !== null) query.set('minAmount_minor', String(Math.abs(min)));
     if (max !== null) query.set('maxAmount_minor', String(Math.abs(max)));
     if (cursor) query.set('cursor', cursor);
+    if (measure) query.set('measure', measure);
     return query.toString();
   }
 
@@ -131,7 +134,7 @@ function Activity() {
     else groups.push({ date: tx.date, items: [tx] });
   }
   const total = result?.total_minor ?? 0;
-  const money = (minor: number) => `${minor < 0 ? '−' : minor > 0 ? '+' : ''}${formatMoney(Math.abs(minor), data?.currency ?? 'EUR')}`;
+  const money = (minor: number) => (measure ? `${minor < 0 ? '−' : ''}${formatMoney(Math.abs(minor), data?.currency ?? 'EUR')}` : `${minor < 0 ? '−' : minor > 0 ? '+' : ''}${formatMoney(Math.abs(minor), data?.currency ?? 'EUR')}`);
   const selectedAccount = shown.current.accountId;
 
   return (
@@ -249,12 +252,12 @@ function Activity() {
                 {money(total)}
               </strong>
             </div>
-            <p className="small muted">{selectedAccount ? t('totalNoteAccount') : t('totalNote')}</p>
+            <p className="small muted">{measure ? t(measure === 'income' ? 'totalNoteIncome' : 'totalNoteSpending') : selectedAccount ? t('totalNoteAccount') : t('totalNote')}</p>
             {groups.map((group) => (
               <div key={group.date}>
                 <h2 className="date-heading">{formatDay(group.date, locale)}</h2>
                 {group.items.map((tx) => (
-                  <TransactionRow key={tx.id} tx={tx} accounts={accounts} categories={categories} currency={data.currency} effect={selectedAccount ? tx.effect_minor : undefined} hideDate />
+                  <TransactionRow key={tx.id} tx={tx} accounts={accounts} categories={categories} currency={data.currency} effect={measure ? (measure === 'expense' ? -tx.effect_minor : tx.effect_minor) : selectedAccount ? tx.effect_minor : undefined} hideDate />
                 ))}
               </div>
             ))}

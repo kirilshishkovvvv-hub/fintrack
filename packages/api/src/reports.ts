@@ -33,7 +33,7 @@ import { backedByGoal } from '@fintrack/domain';
 import { getBudgets } from './budgets.ts';
 import { ApiError } from './http.ts';
 import { safeToSpendFigures } from './plan-state.ts';
-import { recentTransactions, uncategorizedTotals } from './services.ts';
+import { listAccounts, listCategories, recentTransactions, uncategorizedTotals } from './services.ts';
 
 /** Months the income and net worth reports may span at once (FR-15 asks for up to 24). */
 const MAX_MONTHS = 60;
@@ -64,7 +64,7 @@ const shiftMonth = (month: string, by: number) => {
  * are always as of today (FR-14).
  */
 export async function getDashboard(db: Db, context: RequestContext, query: { from?: string | undefined; to?: string | undefined }) {
-  const { workspace, chart, ledger, today } = await ledgerNow(db, context);
+  const { workspace, ledger, today } = await ledgerNow(db, context);
   const thisMonth = monthRange(today.slice(0, 7));
   const period = { from: query.from ?? thisMonth.from, to: query.to ?? thisMonth.to };
   if (period.from > period.to) throw new ApiError(422, 'VALIDATION_FAILED', 'from must not be after to');
@@ -122,7 +122,9 @@ export async function getDashboard(db: Db, context: RequestContext, query: { fro
     uncategorized: await uncategorizedTotals(db, context, ledger, today.slice(0, 7)),
     hasPayday: rules.some((rule) => rule.isPayday && rule.status === 'active'),
     hasPlans: rules.some((rule) => rule.status === 'active'),
-    chartHasAccounts: chart.all().some((account) => account.account),
+    // So the page needs no other request (AC-14.3).
+    accounts: await listAccounts(db, context, ledger),
+    categories: await listCategories(db, context),
   };
 }
 

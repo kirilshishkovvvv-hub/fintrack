@@ -19,6 +19,9 @@
   --warning: #7a4a05;
   --warning-tint: #faeeda;
   --focus: #1d6fd1;
+  --series-1: #007a5a;
+  --series-2: #cc6a14;
+  --chart-line: #e3e8e4;
   --radius: 10px;
   --radius-lg: 16px;
   --shadow: 0 1px 2px rgba(16, 24, 20, 0.06);
@@ -42,6 +45,9 @@
     --warning: #f2c879;
     --warning-tint: #3a2a10;
     --focus: #8ab8ff;
+    --series-1: #2fa87f;
+    --series-2: #cf7c30;
+    --chart-line: #2a352f;
     --shadow: none;
   }
 }
@@ -159,6 +165,30 @@ input[type='file'] { font: inherit; max-width: 100%; }
 
 .actions.compact { gap: 0.15rem; }
 .actions.compact .btn { padding: 0.4rem 0.55rem; min-height: 36px; }
+
+.chart { width: 100%; min-width: 0; }
+.chart svg { display: block; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin-bottom: 0.25rem; color: var(--text-muted); }
+.chart-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 0.35rem; }
+.chart-grid { stroke: var(--chart-line); stroke-width: 1; }
+.chart-zero { stroke: var(--text-muted); stroke-width: 1; }
+.chart-text { fill: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.chart-hit { fill: transparent; }
+.chart-hit:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; border-radius: 0; }
+.chart-hit-on { fill: var(--text-muted); fill-opacity: 0.08; }
+.chart-cross { stroke: var(--text-muted); stroke-width: 1; }
+.chart-dot { stroke: var(--surface); stroke-width: 2; }
+.chart-tooltip { position: absolute; top: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.35rem 0.55rem; box-shadow: 0 2px 8px rgba(16, 24, 20, 0.18); white-space: nowrap; z-index: 2; }
+.chart-tooltip-row { display: flex; align-items: center; gap: 0.4rem; }
+.chart-line-key { display: inline-block; width: 12px; height: 2px; }
+
+.table-scroll { overflow-x: auto; }
+.table-scroll table { width: 100%; border-collapse: collapse; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.table-scroll th, .table-scroll td { padding: 0.35rem 0.4rem; text-align: left; border-top: 1px solid var(--border); white-space: nowrap; }
+.table-scroll thead th { border-top: 0; color: var(--text-muted); font-weight: 500; }
+.table-scroll .num { text-align: right; }
+
+.report-controls { margin-bottom: 0.75rem; }
 
 .date-heading { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin: 0.75rem 0 0; }
 
